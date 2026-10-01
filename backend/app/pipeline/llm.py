@@ -26,7 +26,11 @@ def strict_schema(model: type[BaseModel]) -> dict[str, Any]:
             if "$ref" in node:
                 name = node["$ref"].split("/")[-1]
                 return resolve(copy.deepcopy(defs[name]))
-            out = {k: resolve(v) for k, v in node.items() if k not in ("title", "default")}
+            # "title"/"default" são metadados do schema — mas dentro de "properties" são NOMES de campos
+            # (ex.: o título do vídeo) e precisam ficar
+            out = {k: ({pk: resolve(pv) for pk, pv in v.items()} if k == "properties" and isinstance(v, dict)
+                       else resolve(v))
+                   for k, v in node.items() if k not in ("title", "default")}
             if out.get("type") == "object" and "properties" in out:
                 out["required"] = list(out["properties"].keys())
                 out["additionalProperties"] = False

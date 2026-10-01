@@ -120,3 +120,18 @@ def test_metadata_tolerates_translated_keys():
     assert m.titles[1].angle == "curiosidade" and m.description == "Uma história de trilhos."
     assert m.chapters[0].scene == 1 and m.chapters[0].title == "Abertura"
     assert m.tags == ["trens", "estados unidos", "história"]
+
+
+def test_strict_schema_keeps_fields_named_title():
+    """Causa real dos erros 'titles.0.title' e 'structure.0.title': o campo 'title' sumia do schema enviado."""
+    from app.pipeline.llm import strict_schema
+    from app.pipeline.schemas import ScriptAnalysis, VideoMetadata
+
+    meta = strict_schema(VideoMetadata)
+    title = meta["properties"]["titles"]["items"]
+    assert "title" in title["properties"] and "title" in title["required"]
+    chapter = meta["properties"]["chapters"]["items"]
+    assert "title" in chapter["properties"] and "title" in chapter["required"]
+    section = strict_schema(ScriptAnalysis)["properties"]["structure"]["items"]
+    assert set(section["required"]) == {"title", "starts_with", "assessment"}
+    assert "title" not in meta  # o metadado "title" do próprio schema continua fora
