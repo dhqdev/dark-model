@@ -7,10 +7,11 @@ import { useEstimate } from "../components/estimate";
 import { JobLine } from "../components/jobs";
 import { Badge, ErrorBox, Loading, Modal, Btn, Panel, useToast } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
-import { PROJECT_STATUS, QUALITY_LABEL, brl, timecode, usd } from "../lib/format";
+import { PROJECT_STATUS, QUALITY_LABEL, brl, bytes, timecode, usd } from "../lib/format";
 import type { ProjectDetail, Quality } from "../lib/types";
 import { CostsStage } from "./project/CostsStage";
 import { ExportStage } from "./project/ExportStage";
+import { FilesStage } from "./project/FilesStage";
 import { MetadataStage } from "./project/MetadataStage";
 import { NarrationStage } from "./project/NarrationStage";
 import { ScenesStage } from "./project/ScenesStage";
@@ -29,6 +30,7 @@ const STAGES = [
   { key: "metadados", n: "07", label: "Título/Desc." },
   { key: "exportacao", n: "08", label: "Exportação" },
   { key: "custos", n: "$", label: "Custos" },
+  { key: "arquivos", n: "▤", label: "Arquivos" },
 ] as const;
 
 type StageKey = (typeof STAGES)[number]["key"];
@@ -55,6 +57,8 @@ function stageInfo(p: ProjectDetail, key: StageKey): { detail: string; state: "o
       return { detail: s.metadata.ready ? "sugerido" : "—", state: s.metadata.ready && s.metadata.title ? "ok" : "off" };
     case "exportacao":
       return { detail: `${s.export.count} zip`, state: s.export.count ? (s.export.outdated ? "queued" : "ok") : "off" };
+    case "arquivos":
+      return { detail: bytes(p.size_bytes), state: "off" };
     default:
       return { detail: usd(p.costs.cost), state: "off" };
   }
@@ -126,6 +130,13 @@ export function Project() {
             <div className="panel px-4 py-2.5">
               <div className="kicker">{planned ? "Duração" : "Duração est."}</div>
               <div className="tnum mt-1 font-mono text-[20px] text-paper">{timecode(duration)}</div>
+              <button
+                className="tnum font-mono text-[11px] text-dim hover:text-amber"
+                onClick={() => setParams({ etapa: "arquivos" }, { replace: true })}
+                title="Espaço em disco do projeto — clique para ver e excluir partes"
+              >
+                {bytes(project.size_bytes)} em disco
+              </button>
             </div>
             <div className="panel px-4 py-2.5">
               <div className="kicker">Custo real</div>
@@ -167,9 +178,9 @@ export function Project() {
             <button key={s.key} role="tab" aria-selected={stage === s.key} className="slate-tab" onClick={() => setParams({ etapa: s.key }, { replace: true })}>
               <span className="flex items-center justify-between gap-3">
                 <span className="font-mono text-[10px] tracking-[0.16em] text-amber">{s.n}</span>
-                {s.key !== "custos" && <span className={clsx("led", info.state === "ok" ? "led-ok" : info.state === "queued" ? "led-wait" : "led-off")} />}
+                {s.key !== "custos" && s.key !== "arquivos" && <span className={clsx("led", info.state === "ok" ? "led-ok" : info.state === "queued" ? "led-wait" : "led-off")} />}
               </span>
-              <span className="font-mono text-[11px] tracking-[0.12em] uppercase">{s.label}</span>
+              <span className="font-mono text-[11px] tracking-[0.12em] whitespace-nowrap uppercase">{s.label}</span>
               <span className="tnum font-mono text-[10.5px] text-dim">{info.detail}</span>
             </button>
           );
@@ -193,6 +204,7 @@ export function Project() {
       {stage === "metadados" && <MetadataStage project={project} />}
       {stage === "exportacao" && <ExportStage project={project} />}
       {stage === "custos" && <CostsStage project={project} />}
+      {stage === "arquivos" && <FilesStage project={project} />}
 
       <Modal
         open={renaming !== null}

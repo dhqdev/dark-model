@@ -63,6 +63,7 @@ Canal ─┬─ Skill (versões + aprendizados aprovados)
 | **Thumbnail** | Conceitos (ideia, emoção, composição, texto curto no idioma do canal), prompts e imagens 1280×720 com variações; marque a favorita. |
 | **Metadados** | 8 títulos com contagem de caracteres, descrição, **capítulos com os tempos reais do áudio**, tags (≤ 500 caracteres), hashtags e palavras-chave. |
 | **Exportação** | ZIP organizado (abaixo) e aprendizados automáticos para a Skill. |
+| **Arquivos** | Quanto o projeto ocupa no disco (também na lista de projetos e no painel) e quanto ocupa **cada parte**: cenas, imagens, clipes de movimento, vídeos IA, narração, vídeo final, thumbnails, pacotes ZIP, versões antigas e arquivos soltos. Cada parte pode ser **excluída** (análise e metadados também), com aviso do que precisa ser refeito e se isso custa. O roteiro nunca é apagado ali. |
 
 ```
 projeto/

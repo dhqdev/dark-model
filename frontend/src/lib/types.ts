@@ -216,10 +216,28 @@ export interface ProjectSummary {
   words: number;
   scenes: number | null;
   cost: number;
+  size_bytes: number;
   archived: boolean;
   created_at: string;
   updated_at: string;
   channel_name?: string | null;
+}
+
+export interface StoragePart {
+  key: string;
+  label: string;
+  stage: string;
+  regen: "free" | "paid" | "manual";
+  note: string;
+  count: number;
+  bytes: number;
+  busy: boolean;
+}
+
+export interface ProjectStorage {
+  total_bytes: number;
+  disk_bytes: number;
+  parts: StoragePart[];
 }
 
 export interface Stages {
@@ -432,7 +450,7 @@ export interface CatalogModel {
 }
 
 export interface Dashboard {
-  counts: { channels: number; projects: number; projects_by_status: Record<string, number> };
+  counts: { channels: number; projects: number; projects_by_status: Record<string, number>; storage_bytes: number };
   queue: { queued: number; running: number };
   costs: { today: Totals; month: Totals; total: Totals };
   budget: Budget;

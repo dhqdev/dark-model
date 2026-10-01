@@ -127,10 +127,11 @@ def concept(c: ThumbnailConcept, assets: dict[int, Asset]) -> dict[str, Any]:
             "created_at": iso(c.created_at)}
 
 
-def project_summary(p: Project, cost: float | None = None, scenes: int | None = None) -> dict[str, Any]:
+def project_summary(p: Project, cost: float | None = None, scenes: int | None = None,
+                    size: int | None = None) -> dict[str, Any]:
     return {
         "id": p.id, "channel_id": p.channel_id, "title": p.title, "status": p.status, "quality": p.quality,
         "selected_title": p.selected_title, "words": text.word_count(p.script or ""), "scenes": scenes,
-        "cost": round(cost or 0.0, 6), "archived": p.archived, "created_at": iso(p.created_at),
+        "cost": round(cost or 0.0, 6), "size_bytes": int(size or 0), "archived": p.archived, "created_at": iso(p.created_at),
         "updated_at": iso(p.updated_at),
     }

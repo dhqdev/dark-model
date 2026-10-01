@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { JobLine } from "../components/jobs";
 import { Badge, Empty, ErrorBox, Loading, Notice, PageHeader, Panel, Stat } from "../components/ui";
 import { api } from "../lib/api";
-import { PROJECT_STATUS, QUALITY_LABEL, relative, tokens, usd } from "../lib/format";
+import { bytes, PROJECT_STATUS, QUALITY_LABEL, relative, tokens, usd } from "../lib/format";
 import type { Balance, Dashboard as DashboardData } from "../lib/types";
 
 export function Dashboard() {
@@ -58,7 +58,7 @@ export function Dashboard() {
 
       <div className="panel mb-8 grid grid-cols-2 divide-line md:grid-cols-4 xl:grid-cols-7 [&>*]:border-line [&>*]:border-b xl:[&>*]:border-b-0 [&>*:not(:last-child)]:border-r">
         <Stat label="Canais" value={data.counts.channels} />
-        <Stat label="Projetos" value={data.counts.projects} sub={`${data.counts.projects_by_status.exported ?? 0} exportados`} />
+        <Stat label="Projetos" value={data.counts.projects} sub={`${data.counts.projects_by_status.exported ?? 0} exportados · ${bytes(data.counts.storage_bytes)}`} />
         <Stat label="Fila" value={`${data.queue.running} / ${data.queue.queued}`} sub="rodando / aguardando" />
         <Stat label="Custo hoje" value={usd(data.costs.today.cost, 2)} sub={`${tokens(data.costs.today.tokens)} tokens`} />
         <Stat label="Custo no mês" value={usd(data.costs.month.cost, 2)} sub={`${data.costs.month.calls} chamadas`} />
@@ -103,6 +103,9 @@ export function Dashboard() {
                   <div className="flex items-center gap-2">
                     <Badge tone="dim">{QUALITY_LABEL[p.quality]}</Badge>
                     <Badge tone={p.status === "exported" ? "ok" : "default"}>{PROJECT_STATUS[p.status] ?? p.status}</Badge>
+                    <span className="tnum w-16 text-right font-mono text-[12px] text-dim" title="Espaço em disco">
+                      {bytes(p.size_bytes)}
+                    </span>
                     <span className="tnum w-16 text-right font-mono text-[12px] text-muted">{usd(p.cost)}</span>
                   </div>
                 </Link>

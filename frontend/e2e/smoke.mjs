@@ -87,7 +87,7 @@ async function run(viewport, prefix) {
     for (const [pi, href] of hrefs.slice(0, 2).entries()) {
       await page.locator(`a[href="${href}"]`).first().click();
       await page.waitForSelector('nav[role="tablist"]');
-      const stages = ["Roteiro", "Cenas", "Visuais", "Narração", "Vídeo final", "Thumbnail", "Título/Desc.", "Exportação", "Custos"];
+      const stages = ["Roteiro", "Cenas", "Visuais", "Narração", "Vídeo final", "Thumbnail", "Título/Desc.", "Exportação", "Custos", "Arquivos"];
       for (const [i, s] of stages.entries()) {
         await page.getByRole("tab", { name: new RegExp(s.replace(".", "\\.")) }).click();
         await check(page, errors, `${prefix} projeto ${href}/${s}`, `${prefix}-p${pi}-${i + 1}`);

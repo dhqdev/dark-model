@@ -10,7 +10,8 @@ from .. import serialize, usage as usage_ledger
 from ..config import get_settings
 from ..deps import get_db, require_user
 from ..jobs import queue
-from ..models import Channel, Job, JobStatus, Project, Scene, UsageRecord, utcnow
+from ..models import Asset, Channel, Job, JobStatus, Project, Scene, UsageRecord, utcnow
+from ..pipeline import files
 from .jobs import _decorate
 from .system import workers_online
 
@@ -29,9 +30,10 @@ def dashboard(db: Session = Depends(get_db)) -> dict:
     scenes = dict(db.execute(select(Scene.project_id, func.count(Scene.id)).where(Scene.project_id.in_(ids))
                              .group_by(Scene.project_id)).all()) if ids else {}
     channel_names = dict(db.execute(select(Channel.id, Channel.name)).all())
+    sizes = files.project_sizes(db, ids)
     recent = []
     for p in projects:
-        d = serialize.project_summary(p, costs.get(p.id), scenes.get(p.id, 0))
+        d = serialize.project_summary(p, costs.get(p.id), scenes.get(p.id, 0), sizes.get(p.id, 0))
         d["channel_name"] = channel_names.get(p.channel_id)
         recent.append(d)
     status_counts = dict(db.execute(select(Project.status, func.count(Project.id)).where(Project.archived.is_(False))
@@ -48,6 +50,7 @@ def dashboard(db: Session = Depends(get_db)) -> dict:
             "channels": db.scalar(select(func.count(Channel.id)).where(Channel.archived.is_(False))) or 0,
             "projects": sum(status_counts.values()),
             "projects_by_status": status_counts,
+            "storage_bytes": int(db.scalar(select(func.coalesce(func.sum(Asset.size_bytes), 0))) or 0),
         },
         "queue": {"queued": queue_counts.get("queued", 0), "running": queue_counts.get("running", 0)},
         "costs": {

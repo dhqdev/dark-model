@@ -7,7 +7,7 @@ import { ChannelForm, type ChannelDraft } from "../components/ChannelForm";
 import { JobLine } from "../components/jobs";
 import { Badge, Btn, Empty, ErrorBox, Field, LineDiff, Loading, MarkdownView, Modal, Notice, PageHeader, Panel, Segmented, useToast } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
-import { dateTime, PROJECT_STATUS, QUALITY_LABEL, relative, usd } from "../lib/format";
+import { bytes, dateTime, PROJECT_STATUS, QUALITY_LABEL, relative, usd } from "../lib/format";
 import type { Channel, Job, Learning, ProjectSummary, Quality, Skill } from "../lib/types";
 
 type Tab = "projects" | "skill" | "learnings" | "settings";
@@ -114,6 +114,9 @@ function ProjectsTab({ channel }: { channel: Channel }) {
           <div className="flex items-center gap-2">
             <Badge tone="dim">{QUALITY_LABEL[p.quality]}</Badge>
             <Badge tone={p.status === "exported" ? "ok" : "default"}>{PROJECT_STATUS[p.status] ?? p.status}</Badge>
+            <span className="tnum w-16 text-right font-mono text-[12px] text-dim" title="Espaço em disco">
+              {bytes(p.size_bytes)}
+            </span>
             <span className="tnum w-16 text-right font-mono text-[12px] text-muted">{usd(p.cost)}</span>
           </div>
         </Link>

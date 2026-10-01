@@ -12,6 +12,7 @@ from ..models import Asset, AssetKind, Channel, FeedbackEvent, Job, Project, Qua
 from ..pipeline import text
 from ..pipeline.common import StageError, scene_timeline, tts_settings
 from ..pipeline.estimate import estimate_project, planned
+from ..pipeline import files
 from ..pipeline.render import enqueue_render, render_hash, render_state
 from ..pipeline.narration import enqueue_project_narration
 from ..pipeline.visuals import enqueue_project_visuals
@@ -87,7 +88,8 @@ def list_projects(channel_id: int | None = None, include_archived: bool = False,
                             .where(UsageRecord.project_id.in_(ids)).group_by(UsageRecord.project_id)).all()) if ids else {}
     scenes = dict(db.execute(select(Scene.project_id, func.count(Scene.id)).where(Scene.project_id.in_(ids))
                              .group_by(Scene.project_id)).all()) if ids else {}
-    return [serialize.project_summary(p, costs.get(p.id), scenes.get(p.id, 0)) for p in projects]
+    sizes = files.project_sizes(db, ids)
+    return [serialize.project_summary(p, costs.get(p.id), scenes.get(p.id, 0), sizes.get(p.id, 0)) for p in projects]
 
 
 @router.post("", status_code=201)
@@ -154,7 +156,7 @@ def get_project(project_id: int, db: Session = Depends(get_db)) -> dict:
     cost = usage_ledger.totals(db, UsageRecord.project_id == p.id)
     jobs = [serialize.job(j) for j in queue.active_for(db, project_id=p.id)]
     return {
-        **serialize.project_summary(p, cost["cost"], len(scenes)),
+        **serialize.project_summary(p, cost["cost"], len(scenes), sum(a.size_bytes or 0 for a in assets.values())),
         "script": p.script, "notes": p.notes, "target_minutes": p.target_minutes, "analysis": p.analysis, "plan": p.plan,
         "analysis_at": serialize.iso(p.analysis_at), "metadata_suggestions": p.metadata_suggestions,
         "description": p.description, "tags": p.tags or [],
@@ -320,6 +322,23 @@ def render(project_id: int, db: Session = Depends(get_db)) -> dict:
     job = enqueue_render(db, p)
     db.commit()
     return _job_out(job, "")
+
+
+@router.get("/{project_id}/storage")
+def project_storage(project_id: int, db: Session = Depends(get_db)) -> dict:
+    return files.storage_report(db, _project(db, project_id))
+
+
+@router.delete("/{project_id}/storage/{part}")
+def delete_project_part(project_id: int, part: str, db: Session = Depends(get_db)) -> dict:
+    p = _project(db, project_id)
+    try:
+        result = files.delete_part(db, p, part)
+    except files.FilesError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    db.commit()
+    db.refresh(p)
+    return {**result, "storage": files.storage_report(db, p)}
 
 
 @router.post("/{project_id}/learn")
