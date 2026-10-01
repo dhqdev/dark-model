@@ -1,10 +1,11 @@
 name: CI e imagem Docker
 
-# Push na main: testes → imagem multi-arquitetura em ghcr.io/<dono>/<repositório>:latest (e :sha-xxxxxxx)
-# Tags "v1.2.3" publicam também :1.2.3 e :1.2.  Pull requests só rodam os testes.
+# Push na branch padrão (default): testes → imagem multi-arquitetura em
+# ghcr.io/<dono>/<repositório>:latest (e :sha-xxxxxxx). Tags "v1.2.3" publicam também :1.2.3 e :1.2.
+# Pull requests só rodam os testes.
 on:
   push:
-    branches: [main]
+    branches: [default]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -136,5 +137,5 @@ jobs:
       # Opcional: cadastre o secret PORTAINER_WEBHOOK_URL (webhook da stack no Portainer)
       # para o servidor baixar a imagem nova automaticamente depois do build.
       - name: Atualizar no Portainer
-        if: env.PORTAINER_WEBHOOK_URL != '' && github.ref == 'refs/heads/main'
+        if: env.PORTAINER_WEBHOOK_URL != '' && github.ref_name == github.event.repository.default_branch
         run: curl -fsS -X POST "$PORTAINER_WEBHOOK_URL"

@@ -181,11 +181,11 @@ deploy/             stacks do Portainer (Swarm + Traefik e Docker standalone)
 ## Deploy: GitHub → GHCR → Portainer
 
 ```
-git push (main) → GitHub Actions: testes + e2e → build multi-arquitetura → ghcr.io/dhqdev/dark-model:latest → Portainer
+git push (default) → GitHub Actions: testes + e2e → build multi-arquitetura → ghcr.io/dhqdev/dark-model:latest → Portainer
 ```
 
 ### 1. Imagem no GitHub Container Registry
-O workflow `.github/workflows/ci.yml` roda a cada push na `main`:
+O workflow `.github/workflows/ci.yml` roda a cada push na branch `default` (a branch padrão):
 1. testes do backend em SQLite **e** PostgreSQL, build do frontend;
 2. e2e: sobe o sistema contra um simulador da OpenRouter, executa o **pipeline completo** pela API e
    navega por todas as telas (computador e celular);
