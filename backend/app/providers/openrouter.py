@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import logging
 import random
+import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -412,13 +413,39 @@ class OpenRouterImage:
         return MediaResult(data=raw, mime=mime, usage=u, meta={"params": {"via": "chat", "aspect_ratio": aspect_ratio}})
 
 
+# Formatos de áudio que o /audio/speech pode devolver, em ordem de preferência. Alguns modelos só
+# aceitam um (o Gemini TTS só devolve PCM bruto: 16 bits, 24 kHz, mono); o áudio é convertido
+# para MP3 aqui no servidor.
+_AUDIO_FORMATS = ("mp3", "wav", "pcm", "opus", "aac", "flac")
+_PCM_ONLY = re.compile(r"^google/gemini[\w.-]*tts", re.I)
+_PCM_RATE = 24000
+
+
+def _formats_in(message: str) -> list[str]:
+    """Formatos citados num erro como 'only supports response_format="pcm". Got "mp3".'"""
+    low = message.lower()
+    if "response_format" not in low and "format" not in low:
+        return []
+    got = re.search(r'got\s*"?(\w+)"?', low)
+    rejected = got.group(1) if got else None
+    found = [f for f in _AUDIO_FORMATS if re.search(rf"\b{f}\b", low) and f != rejected]
+    return found
+
+
 class OpenRouterTTS:
     name = PROVIDER
     # limite seguro por requisição (OpenAI aceita 4096 caracteres)
     max_chars = 3500
+    # formato aprendido por modelo (quando o modelo recusa MP3)
+    _formats: dict[str, str] = {}
 
     def __init__(self, client: OpenRouterClient):
         self.client = client
+
+    def _format_for(self, model: str) -> str:
+        if model in self._formats:
+            return self._formats[model]
+        return "pcm" if _PCM_ONLY.match(model) else "mp3"
 
     def synthesize(
         self,
@@ -430,7 +457,8 @@ class OpenRouterTTS:
         style: str | None = None,
         session_id: str | None = None,
     ) -> MediaResult:
-        payload: dict[str, Any] = {"model": model, "input": text, "response_format": "mp3"}
+        fmt = self._format_for(model)
+        payload: dict[str, Any] = {"model": model, "input": text, "response_format": fmt}
         if voice:
             payload["voice"] = voice
         if speed and abs(speed - 1.0) > 1e-3:
@@ -439,13 +467,28 @@ class OpenRouterTTS:
             payload["provider"] = {"options": {"openai": {"instructions": style}}}
         if session_id:
             payload["session_id"] = session_id[:256]
-        resp = self.client.request("POST", "/audio/speech", json=payload, timeout=600)
+        try:
+            resp = self.client.request("POST", "/audio/speech", json=payload, timeout=600)
+        except ProviderError as exc:
+            # o modelo recusou o formato: usa um que ele aceita e lembra para as próximas cenas
+            options = [f for f in _formats_in(str(exc)) if f != fmt] if exc.status == 400 else []
+            if not options:
+                raise
+            fmt = options[0]
+            self._formats[model] = fmt
+            log.info("TTS %s: usando response_format=%s", model, fmt)
+            payload["response_format"] = fmt
+            resp = self.client.request("POST", "/audio/speech", json=payload, timeout=600)
         ctype = resp.headers.get("content-type", "")
         if "json" in ctype:
             raise ProviderError(f"TTS retornou erro: {_error_message(resp)}", retryable=True)
         if not resp.content:
             raise ProviderError("TTS retornou áudio vazio", retryable=True)
-        audio = media.to_mp3(resp.content, ctype or "audio/mpeg")
+        if fmt == "pcm":
+            # PCM bruto não tem cabeçalho: o tipo/taxa vêm da resposta, se ela informar
+            ct = ctype.lower()
+            ctype = ctype if ("pcm" in ct or "l16" in ct or "rate=" in ct) else f"audio/pcm;rate={_PCM_RATE}"
+        audio = media.to_mp3(resp.content, ctype or f"audio/{fmt}")
         gen_id = resp.headers.get("x-generation-id")
         cost = self.client.generation_cost(gen_id) if gen_id else None
         u = Usage(

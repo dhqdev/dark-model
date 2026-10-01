@@ -109,6 +109,10 @@ SPEECH_MODELS = [
     {"id": "google/gemini-3.1-flash-tts-preview", "name": "Google: Gemini 3.1 Flash TTS", "created": NOW - 600_000,
      "pricing": {"prompt": "0.000001", "completion": "0.00002"}, "supported_voices": ["Kore", "Puck", "Charon"]},
 ]
+# modelo fora da família Gemini que também só aceita PCM (o sistema aprende pelo erro 400)
+SPEECH_MODELS.append({"id": "acme/pcm-only-tts", "name": "Acme PCM TTS", "created": NOW - 9_000_000,
+                      "pricing": {"prompt": "0.00002", "completion": "0"}, "supported_voices": ["a"]})
+PCM_ONLY_SPEECH = {"acme/pcm-only-tts"}
 for _m in SPEECH_MODELS:
     _m.update({"canonical_slug": _m["id"], "architecture": {"input_modalities": ["text"], "output_modalities": ["speech"]},
                "supported_parameters": ["voice", "speed", "response_format"], "context_length": 4096})
@@ -396,12 +400,28 @@ class FakeOpenRouter:
         voice = body.get("voice")
         if voice and voice not in info["supported_voices"]:
             return _err(400, f"voice {voice} not supported")
+        fmt = body.get("response_format") or "mp3"
+        # como o Gemini TTS real: só PCM bruto (16 bits, 24 kHz, mono), sem cabeçalho
+        pcm_only = model.startswith("google/gemini") or model in PCM_ONLY_SPEECH
+        if pcm_only and fmt != "pcm":
+            return _err(400, f'Gemini TTS only supports response_format="pcm". Got "{fmt}".')
         text = str(body.get("input", ""))
         seconds = max(1.0, len(text) / 15.0) / float(body.get("speed") or 1.0)
         p_in, p_out = float(info["pricing"]["prompt"]), float(info["pricing"]["completion"])
         cost = len(text) * p_in if not p_out else (len(text) / 4) * p_in + seconds * 32 * p_out
         gid = self._gen("tts-", cost)
+        if fmt == "pcm":
+            return httpx.Response(200, content=self._pcm(seconds),
+                                  headers={"Content-Type": "application/octet-stream", "X-Generation-Id": gid})
         return httpx.Response(200, content=self._mp3(seconds), headers={"Content-Type": "audio/mpeg", "X-Generation-Id": gid})
+
+    @staticmethod
+    def _pcm(seconds: float) -> bytes:
+        rate = 24000
+        n = int(seconds * rate)
+        import math
+        import struct
+        return b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 220 * i / rate))) for i in range(n))
 
     def _video_submit(self, body: dict[str, Any]) -> httpx.Response:
         model = body.get("model", "")

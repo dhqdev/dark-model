@@ -44,3 +44,24 @@ def test_pending_costs_are_reconciled(fake, client):
     with session_scope() as db:
         rec = db.query(UsageRecord).filter_by(generation_id=gid).one()
         assert rec.cost_usd == 0.0123 and rec.cost_source == "generation"
+
+
+def test_gemini_tts_uses_pcm_and_unknown_models_learn_the_format(fake, client):
+    """Caso real: 'Gemini TTS only supports response_format="pcm". Got "mp3".' — 60 narrações falharam."""
+    tts = registry.tts()
+    type(tts)._formats.clear()
+    res = tts.synthesize(model="google/gemini-3.1-flash-tts-preview", text="Dez de maio de 1869.", voice="Kore")
+    assert res.mime == "audio/mpeg"
+    speech = [b for m, p, b in fake.calls if p == "/audio/speech"]
+    assert [b["response_format"] for b in speech] == ["pcm"]  # sem tentativa perdida em MP3
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "a.mp3"
+        out.write_bytes(res.data)
+        assert media.probe(out)["duration"] > 0.5
+
+    # outro modelo que só aceita PCM: aprende pelo erro 400 e não erra de novo
+    fake.calls.clear()
+    tts.synthesize(model="acme/pcm-only-tts", text="Primeira cena.", voice="a")
+    tts.synthesize(model="acme/pcm-only-tts", text="Segunda cena.", voice="a")
+    formats = [b["response_format"] for m, p, b in fake.calls if p == "/audio/speech"]
+    assert formats == ["mp3", "pcm", "pcm"]
