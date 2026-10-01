@@ -63,3 +63,33 @@ def test_final_video_is_assembled_after_narration(auth, fake):
     render = auth.get(f"/api/projects/{pid}").json()["stages"]["render"]
     assert render["outdated"] is False and render["last"]["id"] != final["id"]
     assert render["info"]["auto"] is False
+
+
+def test_montage_with_ai_clip_whose_audio_outlasts_the_video(tmp_path):
+    """Caso real (ffmpeg 7): vídeo IA com som mais longo que a imagem + transições → 'Could not open encoder'."""
+    from PIL import Image
+
+    from app import media, montage
+
+    def audio(i: int, secs: float):
+        p = tmp_path / f"a{i}.mp3"
+        media.ffmpeg("-f", "lavfi", "-i", f"sine=frequency={220 + 40 * i}:duration={secs}", "-c:a", "libmp3lame", str(p))
+        return p, media.probe_duration(p)
+
+    clip = tmp_path / "veo.mp4"
+    media.ffmpeg("-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24:duration=3", "-f", "lavfi", "-i", "sine=duration=6",
+                 "-c:v", "libx264", "-c:a", "aac", str(clip))
+    shots = []
+    for i, (kind, secs, tr) in enumerate([("motion", 3.0, "dissolve"), ("video", 4.2, "dissolve"),
+                                          ("still", 13.0, "fadeblack"), ("motion", 2.5, "flash")]):
+        img = tmp_path / f"i{i}.jpg"
+        Image.new("RGB", (640, 360), (40 * i, 90, 140)).save(img)
+        a, d = audio(i, secs)
+        shots.append(montage.Shot(duration=d, audio=a, kind=kind, clip=clip if kind == "video" else None, image=img,
+                                  transition=tr, sfx="impact" if i == 2 else "none"))
+    out = tmp_path / "final.mp4"
+    info = montage.build(shots, out, montage.Spec(width=320, height=180, fps=10, font=None), tmp_path / "work")
+    assert info["transitions"] == 3 and not info["warnings"]
+    probe = _streams(out)
+    assert sorted(probe["types"]) == ["audio", "video"]
+    assert abs(probe["duration"] - sum(s.duration for s in shots)) < 0.25

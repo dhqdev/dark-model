@@ -84,6 +84,19 @@ def probe_duration(path: Path) -> float | None:
     return probe(path).get("duration")
 
 
+def video_duration(path: Path) -> float:
+    """Duração da trilha de vídeo (um clipe de IA pode ter áudio mais longo que a imagem)."""
+    try:
+        proc = run([get_settings().ffprobe_bin, "-v", "error", "-select_streams", "v:0", "-show_entries",
+                    "stream=duration", "-of", "default=nw=1:nk=1", str(path)], timeout=60)
+        value = proc.stdout.decode().strip().splitlines()
+        if value and value[0] not in ("", "N/A"):
+            return float(value[0])
+    except (MediaError, ValueError):
+        pass
+    return float(probe(path).get("duration") or 0.0)
+
+
 # ---------------------------------------------------------------- imagens
 
 
@@ -218,13 +231,8 @@ def concat_audio(paths: list[Path], out_path: Path, gap_seconds: float = 0.0) ->
             )
             labels.append(f"[g{i}]")
     graph = ";".join(filters) + ";" + "".join(labels) + f"concat=n={len(labels)}:v=0:a=1[out]"
-    script = out_path.with_suffix(".filter.txt")
-    script.write_text(graph)
-    try:
-        ffmpeg(*inputs, "-filter_complex_script", str(script), "-map", "[out]",
-               "-c:a", "libmp3lame", "-b:a", "192k", str(out_path), timeout=1800)
-    finally:
-        script.unlink(missing_ok=True)
+    ffmpeg(*inputs, "-filter_complex", graph, "-map", "[out]", "-c:a", "libmp3lame", "-b:a", "192k", str(out_path),
+           timeout=1800)
 
 
 def silence_mp3(seconds: float, out_path: Path) -> None:

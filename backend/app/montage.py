@@ -4,7 +4,7 @@ Cenas (movimento local, vídeo IA ou imagem) + transições entre cenas + texto 
 máquina de escrever + narração + efeitos sonoros sintetizados.
 
 Como a montagem fica leve (também em ARM): cada cena vira um "corpo" e cada corte vira um pedaço
-de transição; os pedaços são codificados um a um (MPEG-TS) e juntados sem recodificar. A linha do
+de transição; os pedaços são codificados um a um (MP4) e juntados sem recodificar. A linha do
 tempo segue a narração: a cena i ocupa [início_i, início_i + duração do áudio_i]; a transição de
 entrada da cena i acontece no começo dela, misturando o final estendido da cena anterior.
 """
@@ -18,7 +18,7 @@ from pathlib import Path
 
 from . import sfx
 from .config import get_settings
-from .media import MediaError, ffmpeg, probe_duration, render_motion
+from .media import MediaError, ffmpeg, render_motion, video_duration
 
 # nome na cena → (transição do ffmpeg xfade, duração em segundos)
 TRANSITIONS: dict[str, tuple[str | None, float]] = {
@@ -48,6 +48,10 @@ CancelFn = Callable[[], bool]
 
 class Canceled(Exception):
     pass
+
+
+def _short(exc: Exception) -> str:
+    return str(exc).split(" | ")[-1][:160]
 
 
 @dataclass
@@ -128,8 +132,14 @@ def _norm(spec: Spec) -> str:
             f"crop={spec.width}:{spec.height},setsar=1,format=yuv420p")
 
 
+def _restart(spec: Spec) -> str:
+    """Zera o tempo e declara taxa de quadros constante (o xfade do ffmpeg 7 recusa taxa desconhecida)."""
+    return f"setpts=PTS-STARTPTS,fps={spec.fps}"
+
+
 def _last_frame(clip: Path, out: Path) -> Path:
-    ffmpeg("-sseof", "-0.25", "-i", str(clip), "-update", "1", "-frames:v", "1", "-q:v", "2", str(out), timeout=120)
+    # decodifica só o vídeo e fica com o último quadro (funciona mesmo se o áudio do clipe for mais longo)
+    ffmpeg("-i", str(clip), "-map", "0:v:0", "-update", "1", "-q:v", "2", str(out), timeout=300)
     return out
 
 
@@ -138,7 +148,7 @@ def prepare_source(i: int, shot: Shot, need: float, spec: Spec, work: Path) -> S
     if shot.kind == "still" and shot.image:
         return Source(shot.image, True, math.inf)
     if shot.kind == "video" and shot.clip:
-        length = probe_duration(shot.clip) or 0.0
+        length = video_duration(shot.clip)
         if length + 0.05 >= need:
             return Source(shot.clip, False, length)
         if length > 0.5:
@@ -149,13 +159,13 @@ def prepare_source(i: int, shot: Shot, need: float, spec: Spec, work: Path) -> S
                           width=spec.width, height=spec.height, fps=spec.fps)
             joined = work / f"src_{i:04d}.mp4"
             off = max(0.1, length - 0.5)
-            graph = (f"[0:v]{_norm(spec)}[a];[1:v]{_norm(spec)}[b];"
+            graph = (f"[0:v]{_norm(spec)},{_restart(spec)}[a];[1:v]{_norm(spec)},{_restart(spec)}[b];"
                      f"[a][b]xfade=transition=fade:duration=0.5:offset={off:.3f}[v]")
             ffmpeg("-i", str(shot.clip), "-i", str(tail), "-filter_complex", graph, "-map", "[v]", "-an",
                    "-c:v", "libx264", "-preset", spec.preset, "-crf", str(spec.crf - 2), str(joined), timeout=1800)
-            return Source(joined, False, probe_duration(joined) or need)
+            return Source(joined, False, video_duration(joined) or need)
     if shot.kind == "motion" and shot.clip:
-        length = probe_duration(shot.clip) or 0.0
+        length = video_duration(shot.clip)
         # clipe bem mais curto que a narração (ex.: áudio refeito): gera o movimento de novo a partir da imagem
         if length + 0.5 >= shot.duration or not shot.image:
             return Source(shot.clip, False, length)
@@ -164,7 +174,7 @@ def prepare_source(i: int, shot: Shot, need: float, spec: Spec, work: Path) -> S
         out = work / f"src_{i:04d}.mp4"
         render_motion(shot.image, out, need + 0.2, shot.motion if shot.motion != "static" else "zoom_in",
                       width=spec.width, height=spec.height, fps=spec.fps)
-        return Source(out, False, probe_duration(out) or need)
+        return Source(out, False, video_duration(out) or need)
     raise MediaError(f"cena {i + 1} sem imagem nem vídeo")
 
 
@@ -222,26 +232,29 @@ def _text_filters(text: str, length: float, spec: Spec, work: Path, tag: str) ->
 
 
 def _encode(inputs: list[str], graph: str, frames: int, out: Path, spec: Spec, work: Path) -> None:
-    script = out.with_suffix(".graph.txt")
-    script.write_text(graph, encoding="utf-8")
-    ffmpeg(*inputs, "-filter_complex_script", str(script), "-map", "[v]", "-an", "-frames:v", str(frames),
+    ffmpeg(*inputs, "-filter_complex", graph, "-map", "[v]", "-an", "-frames:v", str(frames),
            "-c:v", "libx264", "-preset", spec.preset, "-crf", str(spec.crf), "-pix_fmt", "yuv420p",
-           "-r", str(spec.fps), "-g", str(spec.fps * 4), "-f", "mpegts", str(out), timeout=1800)
+           "-r", str(spec.fps), "-g", str(spec.fps * 4), "-video_track_timescale", str(spec.fps * 1000),
+           "-f", "mp4", str(out), timeout=1800)
 
 
 def _body(i: int, n: int, src: Source, shot: Shot, a: float, length: float, frames: int, spec: Spec,
-          work: Path) -> tuple[Path, tuple[float, float, int]]:
-    out = work / f"p_{i:04d}_b.ts"
-    pad = f"tpad=stop_mode=clone:stop_duration={length + 1:.3f},setpts=PTS-STARTPTS"
+          work: Path, simple: bool = False) -> tuple[Path, tuple[float, float, int]]:
+    out = work / f"p_{i:04d}_b.mp4"
+    pad = f"tpad=stop_mode=clone:stop_duration={length + 1:.3f},{_restart(spec)}"
     chain = [f"[0:v]{_norm(spec)},{pad}[base]"]
     last = "base"
+    if simple:
+        chain.append("[base]null[v]")
+        _encode(_input(src, a, length, work, f"{i:04d}"), ";".join(chain), frames, out, spec, work)
+        return out, (0.0, 0.0, 0)
     if length > LONG_SCENE and shot.kind != "video":
         # segundo enquadramento: aproxima numa região da imagem no meio da cena (sem gerar imagem nova)
         cut, xf = length / 2, 0.5
         fx = (0.5, 0.18, 0.82)[i % 3]
         chain.append(f"[{last}]split=2[p][q]")
-        chain.append(f"[p]trim=end={cut + xf:.3f},setpts=PTS-STARTPTS[p1]")
-        chain.append(f"[q]trim=start={cut:.3f},setpts=PTS-STARTPTS,crop=w=iw/{PUNCH_IN}:h=ih/{PUNCH_IN}:"
+        chain.append(f"[p]trim=end={cut + xf:.3f},{_restart(spec)}[p1]")
+        chain.append(f"[q]trim=start={cut:.3f},{_restart(spec)},crop=w=iw/{PUNCH_IN}:h=ih/{PUNCH_IN}:"
                      f"x=(iw-ow)*{fx}:y=(ih-oh)*0.42,scale={spec.width}:{spec.height},setsar=1[q1]")
         chain.append(f"[p1][q1]xfade=transition=fade:duration={xf}:offset={cut:.3f}[punch]")
         last = "punch"
@@ -256,10 +269,14 @@ def _body(i: int, n: int, src: Source, shot: Shot, a: float, length: float, fram
     return out, typing
 
 
-def _transition(i: int, prev: Source, prev_at: float, cur: Source, name: str, d: float, frames: int, spec: Spec,
+def _transition(i: int, prev: Source, prev_at: float, cur: Source, name: str | None, d: float, frames: int, spec: Spec,
                 work: Path) -> Path:
-    out = work / f"p_{i:04d}_t.ts"
-    pad = f"tpad=stop_mode=clone:stop_duration={d + 1:.3f},setpts=PTS-STARTPTS"
+    out = work / f"p_{i:04d}_t.mp4"
+    pad = f"tpad=stop_mode=clone:stop_duration={d + 1:.3f},{_restart(spec)}"
+    if name is None:
+        # alternativa sem efeito: o começo da cena atual
+        _encode(_input(cur, 0.0, d, work, f"{i:04d}"), f"[0:v]{_norm(spec)},{pad}[v]", frames, out, spec, work)
+        return out
     graph = (f"[0:v]{_norm(spec)},{pad}[a];[1:v]{_norm(spec)},{pad}[b];"
              f"[a][b]xfade=transition={name}:duration={d:.3f}:offset=0[v]")
     inputs = _input(prev, prev_at, d, work, f"{i - 1:04d}") + _input(cur, 0.0, d, work, f"{i:04d}")
@@ -315,9 +332,7 @@ def _audio(shots: list[Shot], tl: Timeline, typing: list[tuple[int, float, float
     else:
         graph.append("[narr]anull[mix]")
     graph.append("[mix]aformat=sample_fmts=s16:channel_layouts=stereo[a]")
-    script = work / "audio.graph.txt"
-    script.write_text(";".join(graph), encoding="utf-8")
-    ffmpeg(*inputs, "-filter_complex_script", str(script), "-map", "[a]", "-ar", "48000", str(out), timeout=1800)
+    ffmpeg(*inputs, "-filter_complex", ";".join(graph), "-map", "[a]", "-ar", "48000", str(out), timeout=1800)
 
 
 # ------------------------------------------------------------------ montagem
@@ -342,7 +357,13 @@ def build(shots: list[Shot], out: Path, spec: Spec, work: Path, *, progress: Pro
     for i, s in enumerate(shots):
         tick(0.02 + 0.13 * i / n, f"preparando cena {i + 1}/{n}")
         need = s.duration + (tl.trans[i + 1][1] if i + 1 < n else 0.0)
-        sources.append(prepare_source(i, s, need, spec, work))
+        try:
+            sources.append(prepare_source(i, s, need, spec, work))
+        except MediaError as exc:
+            if not s.image:
+                raise
+            spec.warnings.append(f"cena {i + 1}: clipe com problema, usada a imagem parada ({_short(exc)})")
+            sources.append(Source(s.image, True, math.inf))
 
     pieces: list[Path] = []
     typing: list[tuple[int, float, float, int]] = []
@@ -352,14 +373,24 @@ def build(shots: list[Shot], out: Path, spec: Spec, work: Path, *, progress: Pro
         if i > 0 and name:
             frames = _frame(tl.starts[i] + d, fps) - _frame(tl.starts[i], fps)
             if frames > 0:
-                pieces.append(_transition(i, sources[i - 1], shots[i - 1].duration, sources[i], name, d, frames,
-                                          spec, work))
+                try:
+                    piece = _transition(i, sources[i - 1], shots[i - 1].duration, sources[i], name, d, frames,
+                                        spec, work)
+                except MediaError as exc:
+                    spec.warnings.append(f"cena {i + 1}: transição trocada por corte ({_short(exc)})")
+                    piece = _transition(i, sources[i - 1], shots[i - 1].duration, sources[i], None, d, frames,
+                                        spec, work)
+                pieces.append(piece)
         body_start = tl.starts[i] + (d if name else 0.0)
         body_end = tl.starts[i] + s.duration
         frames = _frame(body_end, fps) - _frame(body_start, fps)
         if frames > 0:
-            piece, (t0, dt, chars) = _body(i, n, sources[i], s, d if name else 0.0, body_end - body_start, frames,
-                                           spec, work)
+            args = (i, n, sources[i], s, d if name else 0.0, body_end - body_start, frames, spec, work)
+            try:
+                piece, (t0, dt, chars) = _body(*args)
+            except MediaError as exc:
+                spec.warnings.append(f"cena {i + 1}: sem texto/efeito visual ({_short(exc)})")
+                piece, (t0, dt, chars) = _body(*args, simple=True)
             pieces.append(piece)
             typing.append((i, t0, dt, chars))
 

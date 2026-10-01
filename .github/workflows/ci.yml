@@ -93,9 +93,25 @@ jobs:
           (cd ../backend && python scripts/seed_demo.py --url http://127.0.0.1:8010 --password "$APP_PASSWORD") || (tail -n 80 /tmp/server.log; exit 1)
           npm run test:e2e || (tail -n 80 /tmp/server.log; exit 1)
 
+  ffmpeg-image:
+    name: Montagem com o ffmpeg da imagem Docker
+    runs-on: ubuntu-latest
+    # mesma base da imagem publicada (Debian, ffmpeg 7.x): pega diferenças de versão do ffmpeg
+    container: python:3.12-slim
+    steps:
+      - uses: actions/checkout@v7
+      - name: ffmpeg e fontes (como no Dockerfile)
+        run: apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+      - name: Vídeo final, narração e áudio
+        working-directory: backend
+        run: |
+          pip install -r requirements-dev.txt
+          ffmpeg -hide_banner -version | head -1
+          python -m pytest -q tests/test_render.py tests/test_providers.py
+
   docker:
     name: Imagem Docker
-    needs: test
+    needs: [test, ffmpeg-image]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
