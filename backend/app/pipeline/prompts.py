@@ -12,6 +12,25 @@ ORIGINALITY & PLATFORM SAFETY (always):
 - Never depict real private individuals. For real public/historical figures, describe them generically (role, era, clothing) instead of a photorealistic likeness.
 - Avoid gore, sexualized content and anything harmful to minors."""
 
+# Fidelidade e realismo das imagens: cada imagem mostra o que a narração está dizendo naquele momento.
+FIDELITY = """\
+IMAGE FIDELITY (most important):
+- Show LITERALLY what the narration says at that moment: the specific people, objects, places, vehicles, animals and actions it mentions — not a vague mood or a symbol.
+- Start the prompt with the main subject and action in plain words (who/what, doing what, where, when), then the setting details, then shot, light and palette.
+- When the narration mentions or implies people (workers, soldiers, a crowd, a family, an engineer…), SHOW them: realistic faces and hands, period-accurate clothing and tools, natural poses, believable scale.
+- Be concrete and accurate: era, region, architecture, technology of the time, landscape type, weather, time of day (e.g. "1860s steam locomotive with a balloon smokestack", not "an old train").
+- Prefer real-looking documentary photography (photorealistic, natural light, real textures, depth of field) over abstract, symbolic or fantasy imagery — unless the channel visual style asks for illustration.
+- One clear focal subject per image; avoid collages, split screens and impossible compositions."""
+
+_ILLUSTRATED = ("illustrat", "anime", "cartoon", "painting", "watercolor", "watercolour", "3d render", "pixel", "comic",
+                "sketch", "drawing", "desenho", "ilustra", "pintura", "aquarela", "animação", "animacao", "vector")
+
+
+def wants_realism(visual_style: str) -> bool:
+    low = (visual_style or "").lower()
+    return not any(k in low for k in _ILLUSTRATED)
+
+
 REVIEWER_LANGUAGE = "Write every explanation/assessment field in Brazilian Portuguese (pt-BR). Quote excerpts in the script's original language."
 
 
@@ -62,12 +81,13 @@ def scene_plan(
     previous: str,
     block: int,
     blocks: int,
+    language: str = "the narration language",
 ) -> tuple[str, str]:
     words_per_scene = max(6, round(scene_seconds * wpm / 60))
     system = (
-        "You are the director and visual planner of faceless YouTube documentaries. You split narration into "
-        "scenes and design one strong, original visual per scene that keeps retention high. Respond with JSON only."
-        "\n\n" + ORIGINALITY
+        "You are the director, editor and visual planner of faceless YouTube documentaries. You split narration into "
+        "scenes and design one strong, faithful visual per scene that keeps retention high, plus the edit "
+        "(transition, sound effect, on-screen text). Respond with JSON only.\n\n" + FIDELITY + "\n\n" + ORIGINALITY
     )
     numbered = "\n".join(f"[{s.index}] {s.text}" for s in sentences)
     video_rule = (
@@ -82,11 +102,14 @@ The narration below is split into numbered sentences. Group CONSECUTIVE sentence
 - Every sentence from [{first}] to [{last}] must belong to exactly one scene, in order, with no gaps or overlaps. "start" and "end" are inclusive sentence numbers.
 - Target ≈ {scene_seconds:g} s per scene (≈ {words_per_scene} words at {wpm} wpm). Cut when the subject, place, time or idea changes; a long sentence can be a scene alone.
 - visual_description: what the viewer sees, 1–2 sentences in Brazilian Portuguese (pt-BR), for the editor.
-- prompt: detailed ENGLISH prompt for an image model — subject, setting, era details, composition/shot type, camera angle, lighting, mood, color palette. Keep the channel visual style: "{visual_style or 'cinematic documentary'}". No text, letters, captions, logos or watermarks.
+- prompt: detailed ENGLISH prompt for an image model following IMAGE FIDELITY — main subject and action first, then setting and era details, composition/shot type, camera angle, lighting, mood, color palette. Keep the channel visual style: "{visual_style or 'photorealistic cinematic documentary'}". No text, letters, captions, logos or watermarks.
 - Vary the shots (establishing wide, medium, close-up detail, aerial, macro, silhouette, over-the-shoulder) and never repeat the same composition in consecutive scenes.
 - asset_type: IMAGE_MOTION (default — still image animated with slow camera motion), IMAGE (static: maps, diagrams, very short beats under ~3 s), VIDEO (AI video clip). {video_rule}
 - asset_type_reason: short justification in pt-BR.
 - motion: camera move for IMAGE_MOTION — zoom_in (tension, focus), zoom_out (reveal context), pan_left/pan_right (landscapes, wide scenes), pan_up/pan_down (tall subjects), static (IMAGE).
+- transition: how THIS scene enters after the previous one — dissolve (default, most scenes), fadeblack (time jump, new chapter, somber moment), flash (shock, explosion, sudden reveal), slide (travel, movement, "meanwhile"), zoom (diving into a detail), blur (memory, flashback, dream), circle (reveal of a place or object), cut (fast tense sequences). Vary, but keep it tasteful: mostly dissolve.
+- sfx: optional sound effect at the start of the scene, ONLY when it adds impact — whoosh (fast movement, transition of place), impact (dramatic reveal, collision, decisive moment), riser (build-up right before a reveal), tension (suspense, danger), heartbeat (fear, critical moment), wind (open landscapes, desert, storm), rumble (heavy machinery, trains, earthquakes, explosions far away), clock (deadline, waiting, time pressure). Use "none" for most scenes (at most ~1 in 5 scenes has a sound effect).
+- overlay_text: short on-screen text in {language} ONLY when it helps the viewer — a date, a place, a name, a number/statistic or a striking short quote (max 6 words / 45 characters, no emojis). It appears with a typewriter effect. Leave it EMPTY for most scenes (at most ~1 in 6 scenes); always use it for the first mention of a key date or place.
 
 Previous scene, for visual continuity: {previous or '(start of the video)'}
 
@@ -98,7 +121,7 @@ Previous scene, for visual continuity: {previous or '(start of the video)'}
 def scene_rewrite(context: str, scene: dict, prev_desc: str, next_desc: str, instruction: str,
                   video_percent: int, visual_style: str) -> tuple[str, str]:
     system = ("You are the director of a faceless YouTube documentary. You redesign the visual of ONE scene. "
-              "Respond with JSON only.\n\n" + ORIGINALITY)
+              "Respond with JSON only.\n\n" + FIDELITY + "\n\n" + ORIGINALITY)
     video_rule = (f"VIDEO is expensive (≈{video_percent}% of scenes at most); use it only for strong motion moments."
                   if video_percent > 0 else "Do NOT choose VIDEO in this quality tier.")
     user = f"""{context}
@@ -115,7 +138,7 @@ Next scene: {next_desc or '—'}
 {instruction or 'Propose a better, more striking and original visual that fits the narration.'}
 
 ## RULES
-- visual_description in pt-BR (1–2 sentences); prompt in ENGLISH, detailed (subject, setting, shot, angle, light, mood, palette), visual style "{visual_style or 'cinematic documentary'}", no text/logos/watermarks.
+- visual_description in pt-BR (1–2 sentences); prompt in ENGLISH following IMAGE FIDELITY (main subject and action first, then setting, shot, angle, light, mood, palette), visual style "{visual_style or 'photorealistic cinematic documentary'}", no text/logos/watermarks.
 - asset_type IMAGE_MOTION (default), IMAGE (static) or VIDEO. {video_rule} asset_type_reason in pt-BR.
 - motion: zoom_in, zoom_out, pan_left, pan_right, pan_up, pan_down or static."""
     return system, user
@@ -123,7 +146,9 @@ Next scene: {next_desc or '—'}
 
 def image_prompt(prompt: str, visual_style: str) -> str:
     style = f" Visual style: {visual_style.strip()}." if visual_style.strip() else ""
-    return (f"{prompt.strip()}{style} Widescreen 16:9 cinematic frame. Original artwork. "
+    realism = (" Photorealistic documentary photograph, realistic people and objects, accurate period details, "
+               "natural lighting, real textures, sharp focus on the main subject." if wants_realism(visual_style) else "")
+    return (f"{prompt.strip()}{style}{realism} Widescreen 16:9 cinematic frame. Original image. "
             "No text, no letters, no captions, no logos, no watermark.")
 
 

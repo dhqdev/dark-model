@@ -16,7 +16,7 @@ export function ThumbnailStage({ project }: { project: ProjectDetail }) {
   return (
     <div className="space-y-6">
       <Panel
-        index="05"
+        index="06"
         title="Thumbnails"
         actions={
           <div className="flex flex-wrap items-end gap-2">

@@ -56,8 +56,9 @@ PREFERRED: dict[str, dict[str, list[str]]] = {
                           rf"^google/gemini-{_V}-pro(-preview)?$"],
     },
     "image": {
-        # vazio = escolhe o modelo com o menor preço real por imagem
-        Quality.ECONOMY: [],
+        # o mais barato entre famílias realistas e fiéis ao prompt (se nenhuma existir: o mais barato do catálogo)
+        Quality.ECONOMY: [rf"^(google/gemini-{_V}-flash-image(-preview)?|bytedance-seed/seedream[\w.-]*|"
+                          rf"black-forest-labs/flux[\w.-]*|qwen/qwen[\w.-]*image[\w.-]*|openai/gpt-image-{_V}-mini)$"],
         Quality.BALANCED: [rf"^google/gemini-{_V}-flash-image(-preview)?$", rf"^openai/gpt-image-{_V}-mini$"],
         Quality.PREMIUM: [rf"^google/gemini-{_V}-pro-image(-preview)?$", rf"^openai/gpt-image-{_V}$",
                           rf"^openai/gpt-{_V}-image$"],

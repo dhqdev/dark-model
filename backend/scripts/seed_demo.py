@@ -56,7 +56,9 @@ def main() -> None:
     failed = c.get("/jobs?status=failed").json()["jobs"]
     if failed:
         raise SystemExit(f"jobs com falha: {[(j['label'], j['error']) for j in failed]}")
-    print("stages:", {k: v for k, v in p["stages"].items() if k in ("visuals", "narration", "export")})
+    if not p["stages"]["render"]["last"]:
+        raise SystemExit("o vídeo final não foi montado automaticamente depois da narração")
+    print("stages:", {k: v for k, v in p["stages"].items() if k in ("visuals", "narration", "export", "render")})
 
 
 if __name__ == "__main__":

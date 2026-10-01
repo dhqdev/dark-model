@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, Clapperboard, Image as ImageIcon, Mic, Spark
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Btn, Empty, Field, Led, Modal, Notice, Panel, Segmented, useToast } from "../../components/ui";
 import { api, errorMessage } from "../../lib/api";
-import { ASSET_TYPE_LABEL, MOTION_LABEL, minutes, secs, timecode } from "../../lib/format";
+import { ASSET_TYPE_LABEL, MOTION_LABEL, SFX_LABEL, TRANSITION_LABEL, minutes, secs, timecode } from "../../lib/format";
 import type { AssetType, Motion, ProjectDetail, Scene } from "../../lib/types";
 import { useInvalidateProject, useProjectAction } from "./shared";
 
@@ -127,7 +127,10 @@ function SceneRow({ scene, project }: { scene: Scene; project: ProjectDetail }) 
     draft.visual_description !== scene.visual_description ||
     draft.prompt !== scene.prompt ||
     draft.asset_type !== scene.asset_type ||
-    draft.motion !== scene.motion;
+    draft.motion !== scene.motion ||
+    draft.transition !== scene.transition ||
+    draft.sfx !== scene.sfx ||
+    draft.overlay_text !== scene.overlay_text;
   const busy = project.active_jobs.some((j) => j.scene_id === scene.id);
 
   const save = useMutation({
@@ -138,6 +141,9 @@ function SceneRow({ scene, project }: { scene: Scene; project: ProjectDetail }) 
         prompt: draft.prompt,
         asset_type: draft.asset_type,
         motion: draft.motion,
+        transition: draft.transition,
+        sfx: draft.sfx,
+        overlay_text: draft.overlay_text,
       }),
     onSuccess: () => {
       toast(`Cena ${scene.position} salva`);
@@ -174,6 +180,11 @@ function SceneRow({ scene, project }: { scene: Scene; project: ProjectDetail }) 
         <div className="hidden flex-col items-start gap-1 md:flex">
           <Badge tone={scene.asset_type === "VIDEO" ? "amber" : "default"}>{ASSET_TYPE_LABEL[scene.asset_type]}</Badge>
           {scene.asset_type !== scene.ai_asset_type && <span className="font-mono text-[10px] text-dim">IA: {ASSET_TYPE_LABEL[scene.ai_asset_type]}</span>}
+          <span className="font-mono text-[10px] text-dim">
+            {scene.position > 1 ? TRANSITION_LABEL[scene.transition] ?? scene.transition : "abre do preto"}
+            {scene.sfx !== "none" ? ` · ♪ ${SFX_LABEL[scene.sfx] ?? scene.sfx}` : ""}
+            {scene.overlay_text ? " · T" : ""}
+          </span>
         </div>
         <div className="flex items-center justify-end gap-2">
           {scene.image?.url && <img src={scene.image.url} alt="" loading="lazy" className="hidden aspect-video w-14 border border-line object-cover sm:block" />}
@@ -211,6 +222,29 @@ function SceneRow({ scene, project }: { scene: Scene; project: ProjectDetail }) 
               <span className="kicker mr-2">IA sugeriu {ASSET_TYPE_LABEL[scene.ai_asset_type]}</span>
               {scene.asset_type_reason}
             </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-[160px_180px_1fr] xl:col-span-2">
+            <Field label={scene.position === 1 ? "Entrada (abre do preto)" : "Transição de entrada"}>
+              <select className="input" value={draft.transition} disabled={scene.position === 1} onChange={(e) => setDraft({ ...draft, transition: e.target.value })}>
+                {Object.entries(TRANSITION_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Efeito sonoro">
+              <select className="input" value={draft.sfx} onChange={(e) => setDraft({ ...draft, sfx: e.target.value })}>
+                {Object.entries(SFX_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Texto na tela (máquina de escrever) · vazio = sem texto">
+              <input className="input" maxLength={60} placeholder="ex.: 10 de maio de 1869 · Utah" value={draft.overlay_text} onChange={(e) => setDraft({ ...draft, overlay_text: e.target.value })} />
+            </Field>
           </div>
           <div className="flex flex-wrap items-center gap-2 xl:col-span-2">
             <Btn variant="primary" size="sm" disabled={!dirty} loading={save.isPending} onClick={() => save.mutate()}>

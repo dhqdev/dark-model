@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -32,6 +34,7 @@ LANES: dict[str, str] = {
     "visual.motion": "cpu",
     "narration.merge": "cpu",
     "export.zip": "cpu",
+    "render.final": "cpu",
 }
 STAGES: dict[str, str] = {
     "script.analyze": "script",
@@ -46,11 +49,15 @@ STAGES: dict[str, str] = {
     "thumbnail.image": "thumbnail",
     "metadata.generate": "metadata",
     "export.zip": "export",
+    "render.final": "render",
     "skill.draft": "learning",
     "skill.learn": "learning",
     "skill.consolidate": "learning",
 }
-FREE_KINDS = {"visual.motion", "narration.merge", "export.zip"}
+FREE_KINDS = {"visual.motion", "narration.merge", "export.zip", "render.final"}
+# chamados quando um lote termina com sucesso (ex.: montar o vídeo final depois da narração)
+GROUP_HOOKS: list[Callable[[Session, Job], None]] = []
+log = logging.getLogger(__name__)
 ACTIVE = (JobStatus.QUEUED.value, JobStatus.RUNNING.value)
 TERMINAL = (JobStatus.SUCCEEDED.value, JobStatus.FAILED.value, JobStatus.CANCELED.value)
 
@@ -171,6 +178,7 @@ def update_group(db: Session, group_id: int) -> None:
     group = db.get(Job, group_id)
     if group is None or not group.is_group:
         return
+    before = group.status
     rows = db.execute(
         select(Job.status, func.count(Job.id), func.coalesce(func.sum(Job.cost_usd), 0.0))
         .where(Job.parent_id == group_id).group_by(Job.status)
@@ -207,6 +215,14 @@ def update_group(db: Session, group_id: int) -> None:
             group.status = JobStatus.SUCCEEDED.value
             group.error = ""
         group.finished_at = group.finished_at or utcnow()
+        if group.status == JobStatus.SUCCEEDED.value and before != JobStatus.SUCCEEDED.value:
+            db.flush()
+            for hook in GROUP_HOOKS:
+                try:
+                    with db.begin_nested():
+                        hook(db, group)
+                except Exception:  # noqa: BLE001 - o lote terminou; o gatilho não pode derrubar o worker
+                    log.exception("gatilho pós-lote falhou (%s #%s)", group.kind, group.id)
 
 
 def heartbeat(job_id: int, progress: float | None = None, message: str | None = None) -> bool:

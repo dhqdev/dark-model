@@ -16,6 +16,7 @@ from ..models import Asset, AssetKind, AssetType, Job, Project, Scene
 from ..providers import registry
 from ..storage import get_storage
 from .common import StageError, audio_hash, clip_hash, load_project, load_scene, new_asset_path, save_asset, tts_settings
+from .estimate import production_plan
 
 MAX_CHARS = 3500
 
@@ -51,7 +52,7 @@ def enqueue_scene_narration(db: Session, scene: Scene, *, parent_id: int | None 
 
 def enqueue_project_narration(db: Session, project: Project, *, scope: str = "missing",
                               scene_ids: list[int] | None = None) -> Job | None:
-    settings = tts_settings(db, project.channel, project.quality)
+    settings = tts_settings(db, project.channel, project.quality, model=production_plan(db, project).get("tts_model"))
     scenes = [s for s in project.scenes if not scene_ids or s.id in scene_ids]
     if scope != "all":
         scenes = [s for s in scenes if not scene_audio_state(db, s, settings)["ready"]]
@@ -73,7 +74,8 @@ def narrate_scene(ctx: JobContext) -> dict:
         project = scene.project
         if not scene.narration.strip():
             raise StageError(f"A cena {scene.position} não tem texto de narração.")
-        settings = tts_settings(db, project.channel, project.quality)
+        settings = tts_settings(db, project.channel, project.quality,
+                                model=production_plan(db, project).get("tts_model"))
         source_hash = audio_hash(scene, settings)
         text_parts = split_for_tts(scene.narration)
         position = scene.position

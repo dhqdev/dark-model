@@ -11,7 +11,8 @@ from ..jobs import queue
 from ..models import Asset, AssetKind, Channel, FeedbackEvent, Job, Project, Quality, Scene, UsageRecord, utcnow
 from ..pipeline import text
 from ..pipeline.common import StageError, scene_timeline, tts_settings
-from ..pipeline.estimate import estimate_project
+from ..pipeline.estimate import estimate_project, planned
+from ..pipeline.render import enqueue_render, render_hash, render_state
 from ..pipeline.narration import enqueue_project_narration
 from ..pipeline.visuals import enqueue_project_visuals
 from ..storage import get_storage
@@ -108,6 +109,8 @@ def stage_summary(db: Session, p: Project, scenes: list[dict], assets: dict[int,
     narration = [a for a in assets.values() if a.kind == AssetKind.NARRATION.value]
     newest_asset = max((a.created_at for a in assets.values() if a.kind != AssetKind.EXPORT.value), default=None)
     ai = (p.analysis or {}).get("ai") or {}
+    finals = sorted((a for a in assets.values() if a.kind == AssetKind.FINAL.value), key=lambda a: a.id, reverse=True)
+    rendering = any(j.kind == "render.final" for j in queue.active_for(db, project_id=p.id))
     return {
         "script": {"words": text.word_count(p.script or ""), "ready": text.word_count(p.script or "") >= 30,
                    "analyzed": bool(p.analysis), "analysis_fresh": bool(p.analysis) and p.analysis_script_hash == script_hash,
@@ -124,6 +127,16 @@ def stage_summary(db: Session, p: Project, scenes: list[dict], assets: dict[int,
         "metadata": {"ready": bool(p.metadata_suggestions), "title": p.selected_title},
         "export": {"count": len(exports), "last": serialize.asset(exports[0]) if exports else None,
                    "outdated": bool(exports and newest_asset and newest_asset > exports[0].created_at)},
+        "render": {
+            "last": serialize.asset(finals[0]) if finals else None,
+            "info": {k: v for k, v in (finals[0].params or {}).items() if k != "hash"} if finals else None,
+            "outdated": bool(finals and (finals[0].params or {}).get("hash") != render_hash(p)),
+            "running": rendering,
+            "can_render": bool(n) and all(s["image_ok"] and s["audio"] for s in scenes),
+            "complete": bool(n) and all(s["visual_ready"] and s["audio_ok"] for s in scenes),
+            "missing_images": [s["position"] for s in scenes if not s["image_ok"]][:50],
+            "missing_audio": [s["position"] for s in scenes if not s["audio"]][:50],
+        },
     }
 
 
@@ -133,7 +146,7 @@ def get_project(project_id: int, db: Session = Depends(get_db)) -> dict:
     channel = p.channel
     assets = serialize.attach_assets(db, p)
     try:
-        tts = tts_settings(db, channel, p.quality)
+        tts = tts_settings(db, channel, p.quality, model=planned(p, "tts_model"))
     except StageError:
         tts = None
     scenes = [serialize.scene(s, visual_style=channel.visual_style, tts=tts, start=start)
@@ -287,6 +300,24 @@ def export(project_id: int, body: ExportIn, db: Session = Depends(get_db)) -> di
     p = _project(db, project_id)
     job = queue.enqueue(db, "export.zip", label=f"Exportação — {p.title[:60]}", project_id=p.id,
                         channel_id=p.channel_id, payload=body.model_dump())
+    db.commit()
+    return _job_out(job, "")
+
+
+@router.post("/{project_id}/render")
+def render(project_id: int, db: Session = Depends(get_db)) -> dict:
+    p = _project(db, project_id)
+    state = render_state(db, p)
+    if not state["can_render"]:
+        parts = []
+        if state["missing_images"]:
+            parts.append("imagens nas cenas " + ", ".join(map(str, state["missing_images"][:15])))
+        if state["missing_audio"]:
+            parts.append("narração nas cenas " + ", ".join(map(str, state["missing_audio"][:15])))
+        raise HTTPException(400, "Para montar o vídeo faltam " + " e ".join(parts or ["cenas"]) + ".")
+    if state["running"]:
+        raise HTTPException(409, "O vídeo final já está sendo montado.")
+    job = enqueue_render(db, p)
     db.commit()
     return _job_out(job, "")
 

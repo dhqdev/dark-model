@@ -6,7 +6,8 @@ from ..db import session_scope
 from ..jobs.context import JobContext, handler
 from .. import tiers
 from . import prompts, text
-from .common import StageError, load_project, model_for, scene_timeline
+from .common import StageError, load_project, scene_timeline
+from .estimate import plan_model
 from .context import full_context
 from .llm import call_json
 from .schemas import VideoMetadata
@@ -58,7 +59,7 @@ def generate_metadata(ctx: JobContext) -> dict:
         if not (project.script or "").strip():
             raise StageError("Escreva o roteiro antes de gerar título e descrição.")
         tier = project.quality
-        model = model_for(db, "text", tier)
+        model = plan_model(db, project, "text")
         timeline = scene_timeline(list(project.scenes))
         outline = "\n".join(
             f"{s.position} · {text.timecode(start)} · {' '.join(s.narration.split()[:12])}…"

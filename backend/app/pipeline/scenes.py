@@ -13,7 +13,7 @@ from ..models import Asset, FeedbackEvent, Scene, utcnow
 from . import prompts, text
 from .common import StageError, delete_asset_files, effective_scene_seconds, load_project, load_scene, model_for
 from .context import full_context
-from .estimate import production_plan
+from .estimate import plan_model, production_plan
 from .llm import call_json
 from .schemas import PlannedScene, ScenePlan, SceneRewrite
 
@@ -82,15 +82,16 @@ def plan_scenes(ctx: JobContext) -> dict:
         if len(segs) < 3:
             raise StageError("O roteiro precisa ter pelo menos 3 frases para ser dividido em cenas.")
         tier = project.quality
-        model = model_for(db, "text", tier)
         params = tiers.tier_params(db, tier)
         wpm = channel.words_per_minute or text.default_wpm(channel.language)
-        # plano dentro do teto do nível: duração das cenas e % de vídeo IA
+        # plano dentro do teto do nível: duração das cenas, % de vídeo IA e modelo de texto
         budget = production_plan(db, project, refresh=True, ignore_scenes=True)
+        model = budget.get("text_model") or model_for(db, "text", tier)
         scene_seconds = float(budget.get("scene_seconds") or effective_scene_seconds(channel, params))
         video_percent = int(round(float(budget.get("video_share") or 0) * 100))
         context = full_context(db, project)
         visual_style = channel.visual_style
+        language = text.language_label(channel.language)
         script_hash = text.content_hash(project.script)
     by_index = {s.index: s for s in segs}
     chunks = text.chunk_segments(segs, MAX_BLOCK_WORDS)
@@ -102,6 +103,7 @@ def plan_scenes(ctx: JobContext) -> dict:
         system, user = prompts.scene_plan(
             context, chunk, first=first, last=last, scene_seconds=scene_seconds, wpm=wpm,
             video_percent=video_percent, visual_style=visual_style, previous=previous, block=i, blocks=len(chunks),
+            language=language,
         )
         expected_scenes = max(1, round(sum(s.words for s in chunk) / max(1, scene_seconds * wpm / 60)))
         plan, _ = call_json(ctx, model=model, system=system, user=user, schema=ScenePlan, schema_name="scene_plan",
@@ -130,6 +132,8 @@ def plan_scenes(ctx: JobContext) -> dict:
                 asset_type=item["asset_type"], ai_asset_type=item["asset_type"],
                 asset_type_reason=item["asset_type_reason"], motion=item["motion"],
                 sentence_start=item["start"], sentence_end=item["end"],
+                transition="dissolve" if pos == 1 else item.get("transition") or "dissolve",
+                sfx=item.get("sfx") or "none", overlay_text=item.get("overlay_text") or "",
             ))
         project.scenes_planned_at = utcnow()
         project.scenes_script_hash = script_hash
@@ -147,7 +151,7 @@ def rewrite_scene(ctx: JobContext) -> dict:
         project = scene.project
         channel = project.channel
         tier = project.quality
-        model = model_for(db, "text", tier)
+        model = plan_model(db, project, "text")
         params = tiers.tier_params(db, tier)
         scenes = list(project.scenes)
         idx = next(i for i, s in enumerate(scenes) if s.id == scene.id)

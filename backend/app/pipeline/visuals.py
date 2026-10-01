@@ -47,15 +47,35 @@ def enqueue_scene_visual(db: Session, scene: Scene, *, parent_id: int | None = N
     return queue.enqueue(db, "visual.image", label=f"Cena {scene.position}: imagem", **common)
 
 
+def fit_video_scenes(db: Session, project: Project, plan: dict) -> int:
+    """Cenas de vídeo IA além do que cabe no teto viram imagem com movimento (as travadas ficam)."""
+    keep = plan.get("video_keep")
+    if keep is None:
+        return 0
+    videos = [s for s in project.scenes if s.asset_type == AssetType.VIDEO.value]
+    locked = [s for s in videos if s.locked]
+    free = [s for s in videos if not s.locked]
+    extra = free[max(0, int(keep) - len(locked)):]
+    cap = plan.get("cap_brl")
+    for s in extra:
+        s.asset_type = AssetType.IMAGE_MOTION.value
+        s.motion = s.motion if s.motion != "static" else "zoom_in"
+        s.asset_type_reason = (f"Era vídeo IA; virou imagem com movimento para caber no teto de R$ {cap:.0f}. "
+                               "Trave a cena para manter o vídeo." if cap else "Era vídeo IA; virou imagem com movimento.")
+    if extra:
+        db.flush()
+    return len(extra)
+
+
 def enqueue_project_visuals(db: Session, project: Project, *, scope: str = "missing",
                             scene_ids: list[int] | None = None) -> Job | None:
+    # refaz o plano com as cenas reais: o modelo de imagem escolhido vale para todas
+    fit_video_scenes(db, project, production_plan(db, project, refresh=True))
     scenes = [s for s in project.scenes if not scene_ids or s.id in scene_ids]
     if scope != "all":
         scenes = [s for s in scenes if not scene_visual_state(db, s, project.channel.visual_style)["ready"]]
     if not scenes:
         return None
-    # refaz o plano com as cenas reais: o modelo de imagem escolhido vale para todas
-    production_plan(db, project, refresh=True)
     group = queue.create_group(db, "visuals.batch", label=f"Visuais de {len(scenes)} cenas", stage="visuals",
                                project_id=project.id, channel_id=project.channel_id)
     for s in scenes:

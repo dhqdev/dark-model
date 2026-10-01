@@ -93,6 +93,29 @@ export const MOTION_LABEL: Record<string, string> = {
   static: "Estático",
 };
 
+export const TRANSITION_LABEL: Record<string, string> = {
+  dissolve: "Dissolver",
+  fadeblack: "Fade preto",
+  flash: "Flash",
+  slide: "Deslizar",
+  zoom: "Zoom",
+  blur: "Desfoque",
+  circle: "Círculo",
+  cut: "Corte seco",
+};
+
+export const SFX_LABEL: Record<string, string> = {
+  none: "Nenhum",
+  whoosh: "Whoosh",
+  impact: "Impacto",
+  riser: "Subida (riser)",
+  tension: "Tensão",
+  heartbeat: "Batimento",
+  wind: "Vento",
+  rumble: "Estrondo grave",
+  clock: "Relógio",
+};
+
 export const STATUS_LABEL: Record<string, string> = {
   queued: "Na fila",
   running: "Rodando",

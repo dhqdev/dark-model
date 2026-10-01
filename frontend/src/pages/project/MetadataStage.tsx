@@ -45,7 +45,7 @@ export function MetadataStage({ project }: { project: ProjectDetail }) {
   return (
     <div className="space-y-6">
       <Panel
-        index="06"
+        index="07"
         title="Título, descrição e tags"
         actions={
           <>

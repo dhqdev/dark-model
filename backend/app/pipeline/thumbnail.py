@@ -8,7 +8,8 @@ from ..jobs.context import JobContext, handler
 from ..models import AssetKind, ThumbnailConcept
 from ..providers import registry
 from . import prompts, text
-from .common import StageError, load_project, model_for, new_asset_path, save_asset
+from .common import StageError, load_project, new_asset_path, save_asset
+from .estimate import plan_model, production_plan
 from .context import full_context
 from .llm import call_json
 from .schemas import ThumbConcepts
@@ -33,9 +34,10 @@ def thumbnail_concepts(ctx: JobContext) -> dict:
             raise StageError("Escreva o roteiro antes de criar thumbnails.")
         tier = project.quality
         params = tiers.tier_params(db, tier)
-        count = int(ctx.payload.get("count") or params.get("thumb_concepts") or 3)
-        variations = int(ctx.payload.get("variations") or params.get("thumb_variations") or 1)
-        model = model_for(db, "text", tier)
+        plan = production_plan(db, project)  # quantidades dentro do teto do nível
+        count = int(ctx.payload.get("count") or plan.get("thumb_concepts") or params.get("thumb_concepts") or 3)
+        variations = int(ctx.payload.get("variations") or plan.get("thumb_variations") or params.get("thumb_variations") or 1)
+        model = plan_model(db, project, "text")
         titles = []
         if project.selected_title:
             titles.append(project.selected_title)
@@ -74,8 +76,9 @@ def thumbnail_image(ctx: JobContext) -> dict:
             raise StageError("Conceito de thumbnail não encontrado.")
         project = concept.project
         channel = project.channel
-        model = model_for(db, "thumbnail", project.quality)
-        resolution = tiers.tier_params(db, project.quality).get("image_resolution")
+        model = plan_model(db, project, "thumbnail")
+        resolution = production_plan(db, project).get("thumb_resolution") or \
+            tiers.tier_params(db, project.quality).get("image_resolution")
         prompt = prompts.thumbnail_image_prompt(concept.prompt, concept.overlay_text, channel.thumbnail_text_mode,
                                                 channel.thumbnail_style)
         name = concept.name

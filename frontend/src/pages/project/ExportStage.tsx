@@ -28,7 +28,7 @@ export function ExportStage({ project }: { project: ProjectDetail }) {
   const running = project.active_jobs.some((j) => j.kind === "export.zip");
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-      <Panel index="07" title="Exportação para edição">
+      <Panel index="08" title="Exportação para edição">
         <div className="space-y-2">
           {checks.map(([label, ok, detail]) => (
             <div key={label} className="flex items-center justify-between border-b border-line py-2 last:border-b-0">

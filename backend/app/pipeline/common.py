@@ -41,8 +41,9 @@ def clip_hash(scene: Scene, visual_style: str) -> str:
     return text.content_hash(scene.prompt.strip(), visual_style.strip(), scene.asset_type, scene.motion)
 
 
-def tts_settings(db: Session, channel: Channel, tier: str) -> dict[str, Any]:
-    model = channel.tts_model or model_for(db, "tts", tier)
+def tts_settings(db: Session, channel: Channel, tier: str, model: str | None = None) -> dict[str, Any]:
+    """Voz da narração: a fixada no canal, senão a do plano do projeto, senão a do nível."""
+    model = channel.tts_model or model or model_for(db, "tts", tier)
     voices = catalog.speech_voices(model)
     voice = channel.tts_voice
     warning = ""

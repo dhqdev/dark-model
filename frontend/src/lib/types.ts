@@ -70,6 +70,9 @@ export interface Scene {
   motion: Motion;
   locked: boolean;
   notes: string;
+  transition: string;
+  sfx: string;
+  overlay_text: string;
   image: Asset | null;
   clip: Asset | null;
   audio: Asset | null;
@@ -227,6 +230,16 @@ export interface Stages {
   thumbnail: { concepts: number; images: number; selected: boolean };
   metadata: { ready: boolean; title: string };
   export: { count: number; last: Asset | null; outdated: boolean };
+  render: {
+    last: Asset | null;
+    info: { duration: number; pieces: number; scenes: number; transitions: number; overlays: number; sfx: number; warnings: string[]; auto: boolean | null } | null;
+    outdated: boolean;
+    running: boolean;
+    can_render: boolean;
+    complete: boolean;
+    missing_images: number[];
+    missing_audio: number[];
+  };
 }
 
 export interface ProjectDetail extends ProjectSummary {

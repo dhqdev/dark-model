@@ -56,9 +56,10 @@ Canal ─┬─ Skill (versões + aprendizados aprovados)
 | Etapa | O que acontece |
 |---|---|
 | **Roteiro** | Métricas medidas pelo sistema (palavras, duração estimada pelo WPM do idioma, frases repetidas, trechos de 5 palavras repetidos, frases longas) + análise da IA: notas (gancho, estrutura, coerência, retenção, originalidade, adequação ao canal), problemas com trecho e correção, **riscos de política do YouTube** (copyright, conteúdo reutilizado/inautêntico, spam/enganoso, desinformação, violência, conteúdo sintético que exige divulgação, pouco amigável a anunciantes…) e melhorias priorizadas. |
-| **Cenas** | O roteiro é dividido em frases localmente (sem perder nem inventar texto) e a IA agrupa as frases em cenas, escreve a descrição visual (pt-BR), o prompt (inglês, com o estilo visual do canal) e decide **IMAGE / IMAGE + MOTION / VIDEO** com justificativa. Você pode editar tudo, trocar o tipo e **reescrever só uma cena** com uma instrução. |
+| **Cenas** | O roteiro é dividido em frases localmente (sem perder nem inventar texto) e a IA agrupa as frases em cenas, escreve a descrição visual (pt-BR), o prompt (inglês, **fiel ao que a narração diz**: as pessoas, objetos e lugares citados, fotorrealista com detalhes de época — a não ser que o estilo do canal peça ilustração) e decide **IMAGE / IMAGE + MOTION / VIDEO** com justificativa. Também escolhe a **transição** de entrada, um **efeito sonoro** (poucas cenas) e um **texto na tela** curto (datas, lugares, nomes, números — só quando combina). Você pode editar tudo, trocar o tipo e **reescrever só uma cena** com uma instrução. |
 | **Visuais** | Imagem 1920×1080 por IA → **movimento de câmera local com ffmpeg** (zoom/pan suave, sem custo) ou **vídeo por IA** usando a imagem como primeiro quadro (quando o modelo aceita). Versões anteriores ficam guardadas para escolher. |
 | **Narração** | TTS **por cena** (regenera só o trecho alterado), duração real medida com ffprobe; o clipe de movimento é re-renderizado para bater com o áudio. Narração completa em um MP3. |
+| **Vídeo final** | **Monta sozinho** quando a narração (ou os visuais) termina e todas as cenas estão prontas — **sem IA e sem custo**, com ffmpeg no servidor: cenas na ordem e no tempo da narração, **transições** entre as cenas (dissolver, fade preto, flash, deslizar, zoom, desfoque, círculo), **texto com efeito de máquina de escrever** (com som de teclas), **efeitos sonoros sintetizados no servidor** (whoosh, impacto, subida, tensão, batimento, vento, estrondo, relógio — sem direitos autorais de terceiros), fade de abertura e encerramento. Cenas longas (> 12 s) ganham um segundo enquadramento no meio; vídeo IA mais curto que a narração continua com movimento suave do último quadro. MP4 H.264/AAC pronto para **baixar** na tela "Vídeo final" (também dá para montar de novo depois de editar). |
 | **Thumbnail** | Conceitos (ideia, emoção, composição, texto curto no idioma do canal), prompts e imagens 1280×720 com variações; marque a favorita. |
 | **Metadados** | 8 títulos com contagem de caracteres, descrição, **capítulos com os tempos reais do áudio**, tags (≤ 500 caracteres), hashtags e palavras-chave. |
 | **Exportação** | ZIP organizado (abaixo) e aprendizados automáticos para a Skill. |
@@ -110,9 +111,13 @@ cena* do canal (12–15 s), deixe o vídeo IA em 0% e escolha um modelo de image
 ### Teto por vídeo (em reais)
 Cada nível tem um **teto por vídeo** (padrão: Economy sem teto, Balanced **R$ 20**, Premium
 **R$ 50**; 0 = sem teto). Se o plano padrão passar do teto, o sistema ajusta o plano daquele vídeo,
-nesta ordem, até caber: **1)** reduz/corta o vídeo IA → **2)** alonga as cenas até 12 s (menos
-imagens) → **3)** usa o modelo de imagem do nível abaixo (só se você não fixou um) → **4)** cenas
-de até 20 s. A estimativa mostra o total em R$ e US$, o teto (✓/✕) e o que foi ajustado.
+escolhendo a combinação de **melhor qualidade que cabe**. Ele pode, do que menos aparece para o que
+mais aparece: reduzir/cortar o vídeo IA (inclusive cenas de vídeo já planejadas — as travadas
+ficam), reduzir as thumbnails, usar o modelo de texto do nível abaixo, alongar as cenas até 12 s
+(menos imagens), usar o modelo de imagem do nível abaixo e, por último, a voz do nível abaixo e
+cenas de até 20 s. Modelos fixados por você (em Configurações ou a voz do canal) não são trocados;
+imagens e voz já geradas num projeto mantêm o mesmo modelo. A estimativa mostra o total em R$ e
+US$, o teto (✓/✕) e o que foi ajustado.
 
 O plano escolhido é o que a produção usa: a divisão em cenas segue a duração planejada (e junta
 cenas se a IA criar cenas demais) e todas as imagens do projeto usam o mesmo modelo. O teto vale
@@ -282,7 +287,9 @@ de 7 s levou ~5 s para renderizar num servidor x86 de teste; para acelerar, use 
 | `APP_PUBLIC_URL` | não | URL pública (identificação do app na OpenRouter). |
 | `COOKIE_SECURE` | não | `true` quando o acesso é por HTTPS (Traefik). Com `http://IP:porta`, `false`. |
 | `WORKER_LANES` | não | Vagas simultâneas por tipo: `llm=2,image=4,tts=3,video=2,cpu=1`. |
-| `MOTION_SIZE`, `MOTION_FPS` | não | Resolução e fps dos clipes de movimento (padrão `1920x1080`, `30`). |
+| `MOTION_SIZE`, `MOTION_FPS` | não | Resolução e fps dos clipes de movimento e do vídeo final (padrão `1920x1080`, `30`). |
+| `OVERLAY_FONT` | não | Fonte (.ttf) do texto na tela do vídeo final. Padrão: DejaVu Sans Mono (já na imagem). |
+| `USD_BRL`, `FX_AUTO` | não | Cotação usada sem acesso à cotação do dia (padrão `5.5`); `FX_AUTO=false` usa sempre `USD_BRL`. |
 | `CATALOG_TTL_MINUTES` | não | Validade do cache do catálogo/preços (padrão 360). |
 | `EMBEDDED_WORKER` | não | `true` roda o worker dentro da API (o papel `all` já faz isso). |
 | `LOG_LEVEL`, `TZ` | não | Log e fuso horário. |
@@ -339,9 +346,8 @@ cancelamento, recuperação de jobs travados e consistência das migrações com
 
 | Evolução | Onde encaixa |
 |---|---|
-| **Montagem automática** (imagens, vídeos, narração, legendas, transições, música) | `timeline.json` já descreve todas as trilhas; nova etapa `assembly.render` (lane `cpu`) usando ffmpeg. |
-| **Legendas queimadas / estilos** | `pipeline/text.py` já gera o SRT sincronizado com o áudio real. |
-| **Música e efeitos** | trilhas `music` e `sfx` já existem no `timeline.json`; novo provider de áudio. |
+| **Legendas queimadas / estilos** | `pipeline/text.py` já gera o SRT sincronizado com o áudio real; `montage.py` já desenha texto (drawtext). |
+| **Música de fundo** | `montage.py` já mixa narração + efeitos; basta uma trilha de música (biblioteca própria) com ducking. |
 | **Publicação no YouTube** | metadados finais, thumbnail escolhida e capítulos já estão no projeto; nova etapa com OAuth. |
 | **Analytics e aprendizado por desempenho** | `FeedbackEvent` + aprendizados da Skill: basta registrar métricas do YouTube como novos sinais. |
 | **Outros providers** (ElevenLabs, fal.ai, modelos locais) | implementar a interface em `providers/` e registrar em `providers/registry.py`. |

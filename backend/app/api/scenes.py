@@ -11,6 +11,8 @@ from ..jobs import queue
 from ..models import Asset, AssetKind, AssetType, FeedbackEvent, Motion, Scene
 from ..pipeline import text
 from ..pipeline.common import StageError, delete_asset_files, tts_settings
+from ..pipeline.estimate import planned
+from ..pipeline.schemas import clean_overlay, norm_sfx, norm_transition
 from ..pipeline.narration import enqueue_scene_narration
 from ..pipeline.visuals import enqueue_scene_visual
 
@@ -25,6 +27,9 @@ class ScenePatch(BaseModel):
     motion: Motion | None = None
     locked: bool | None = None
     notes: str | None = None
+    transition: str | None = None
+    sfx: str | None = None
+    overlay_text: str | None = Field(None, max_length=120)
 
 
 class RewriteIn(BaseModel):
@@ -48,7 +53,7 @@ def _out(db: Session, s: Scene) -> dict:
     p = s.project
     serialize.attach_assets(db, p)
     try:
-        tts = tts_settings(db, p.channel, p.quality)
+        tts = tts_settings(db, p.channel, p.quality, model=planned(p, "tts_model"))
     except StageError:
         tts = None
     return serialize.scene(s, visual_style=p.channel.visual_style, tts=tts)
@@ -59,6 +64,12 @@ def update_scene(scene_id: int, body: ScenePatch, db: Session = Depends(get_db))
     s = _scene(db, scene_id)
     p = s.project
     data = body.model_dump(exclude_unset=True)
+    if data.get("transition") is not None:
+        data["transition"] = norm_transition(data["transition"])
+    if data.get("sfx") is not None:
+        data["sfx"] = norm_sfx(data["sfx"])
+    if data.get("overlay_text") is not None:
+        data["overlay_text"] = clean_overlay(data["overlay_text"])
     events = []
     if data.get("prompt") is not None and data["prompt"].strip() != s.prompt.strip():
         events.append(("scene_prompt_edited", {"before": s.prompt, "after": data["prompt"], "position": s.position}))

@@ -66,6 +66,7 @@ class AssetKind(StrEnum):
     NARRATION = "narration"
     THUMBNAIL = "thumbnail"
     EXPORT = "export"
+    FINAL = "final"  # vídeo final montado (imagens/vídeos + narração + transições + texto + efeitos)
 
 
 class Channel(Base):
@@ -214,6 +215,10 @@ class Scene(Base):
     motion: Mapped[str] = mapped_column(String(16), default=Motion.ZOOM_IN.value)
     sentence_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sentence_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # edição do vídeo final: transição de entrada, efeito sonoro e texto na tela (máquina de escrever)
+    transition: Mapped[str] = mapped_column(String(16), default="dissolve", server_default="dissolve")
+    sfx: Mapped[str] = mapped_column(String(16), default="none", server_default="none")
+    overlay_text: Mapped[str] = mapped_column(String(120), default="", server_default="")
     locked: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str] = mapped_column(Text, default="")
     # assets escolhidos (sem FK para evitar dependência circular; mantidos pela aplicação)

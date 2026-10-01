@@ -9,6 +9,7 @@ from ..jobs.context import JobContext, handler
 from ..models import Channel, FeedbackEvent, Quality, Skill, SkillLearning, utcnow
 from . import prompts, text
 from .common import StageError, model_for
+from .estimate import plan_model
 from .context import accepted_learnings, channel_block, current_skill
 from .llm import call_json
 from .schemas import Learnings, SkillDocument
@@ -89,7 +90,7 @@ def extract_learnings(ctx: JobContext) -> dict:
         ])
         skill = current_skill(db, channel.id)
         accepted = [f"[{a.category}] {a.text}" for a in accepted_learnings(db, channel.id)]
-        model = model_for(db, "text", project.quality)
+        model = plan_model(db, project, "text")
         system, user = prompts.learnings(skill.content if skill else "", accepted, summary, _feedback_text(events))
         event_ids = [e.id for e in events]
     ctx.progress(0.2, "extraindo aprendizados do projeto", force=True)

@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     # Clipes de movimento (IMAGE + MOTION) renderizados localmente
     motion_size: str = "1920x1080"
     motion_fps: int = 30
+    # vídeo final: fonte do texto na tela (vazio = DejaVu Sans Mono do sistema)
+    overlay_font: str = ""
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
 

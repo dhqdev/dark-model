@@ -38,6 +38,16 @@ export function NarrationStage({ project }: { project: ProjectDetail }) {
           </>
         }
       >
+        {ready === scenes.length && (project.stages.render.running || project.stages.render.last) && (
+          <div className="mb-4">
+            <Notice tone="ok">
+              {project.stages.render.running ? "Narração completa — o vídeo final está sendo montado. " : "Vídeo final pronto para baixar. "}
+              <Link to={`/projetos/${project.id}?etapa=video`} className="text-amber underline-offset-2 hover:underline">
+                Abrir vídeo final →
+              </Link>
+            </Notice>
+          </div>
+        )}
         <div className="mb-4 grid gap-4 md:grid-cols-[1fr_auto]">
           <div className="space-y-1.5 text-[13px]">
             {project.tts ? (

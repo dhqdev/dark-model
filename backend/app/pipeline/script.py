@@ -7,7 +7,8 @@ from ..jobs.context import JobContext, handler
 from ..models import utcnow
 from .. import tiers
 from . import prompts, text
-from .common import StageError, load_project, model_for
+from .common import StageError, load_project
+from .estimate import plan_model
 from .context import full_context
 from .llm import call_json
 from .schemas import ScriptAnalysis
@@ -22,7 +23,7 @@ def analyze_script(ctx: JobContext) -> dict:
         if len(text.words(script)) < 30:
             raise StageError("O roteiro está vazio ou curto demais para analisar (mínimo de 30 palavras).")
         tier = project.quality
-        model = model_for(db, "text", tier)
+        model = plan_model(db, project, "text")
         params = tiers.tier_params(db, tier)
         wpm = channel.words_per_minute or text.default_wpm(channel.language)
         metrics = text.script_metrics(script, wpm, channel.duration_min, channel.duration_max)

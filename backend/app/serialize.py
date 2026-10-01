@@ -103,6 +103,7 @@ def scene(s: Scene, *, visual_style: str, tts: dict[str, Any] | None, start: flo
         "words": text.word_count(s.narration), "visual_description": s.visual_description, "prompt": s.prompt,
         "asset_type": s.asset_type, "ai_asset_type": s.ai_asset_type, "asset_type_reason": s.asset_type_reason,
         "motion": s.motion, "locked": s.locked, "notes": s.notes,
+        "transition": s.transition, "sfx": s.sfx, "overlay_text": s.overlay_text,
         "image": asset(image), "clip": asset(clip), "audio": asset(audio),
         "image_ok": image_ok, "clip_ok": clip_ok, "visual_ready": visual_ready, "audio_ok": audio_ok,
         "updated_at": iso(s.updated_at),

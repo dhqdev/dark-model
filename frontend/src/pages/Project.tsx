@@ -16,6 +16,7 @@ import { NarrationStage } from "./project/NarrationStage";
 import { ScenesStage } from "./project/ScenesStage";
 import { ScriptStage } from "./project/ScriptStage";
 import { ThumbnailStage } from "./project/ThumbnailStage";
+import { VideoStage } from "./project/VideoStage";
 import { VisualsStage } from "./project/VisualsStage";
 
 const STAGES = [
@@ -23,9 +24,10 @@ const STAGES = [
   { key: "cenas", n: "02", label: "Cenas" },
   { key: "visuais", n: "03", label: "Visuais" },
   { key: "narracao", n: "04", label: "Narração" },
-  { key: "thumbnail", n: "05", label: "Thumbnail" },
-  { key: "metadados", n: "06", label: "Título/Desc." },
-  { key: "exportacao", n: "07", label: "Exportação" },
+  { key: "video", n: "05", label: "Vídeo final" },
+  { key: "thumbnail", n: "06", label: "Thumbnail" },
+  { key: "metadados", n: "07", label: "Título/Desc." },
+  { key: "exportacao", n: "08", label: "Exportação" },
   { key: "custos", n: "$", label: "Custos" },
 ] as const;
 
@@ -42,6 +44,11 @@ function stageInfo(p: ProjectDetail, key: StageKey): { detail: string; state: "o
       return { detail: `${s.visuals.ready}/${s.visuals.total}`, state: s.visuals.total && s.visuals.ready === s.visuals.total ? "ok" : s.visuals.ready ? "queued" : "off" };
     case "narracao":
       return { detail: `${s.narration.ready}/${s.narration.total}`, state: s.narration.total && s.narration.ready === s.narration.total ? "ok" : s.narration.ready ? "queued" : "off" };
+    case "video":
+      return {
+        detail: s.render.running ? "montando…" : s.render.last ? timecode(s.render.last.duration) : "—",
+        state: s.render.last ? (s.render.outdated ? "queued" : "ok") : s.render.running ? "queued" : "off",
+      };
     case "thumbnail":
       return { detail: `${s.thumbnail.images} imgs`, state: s.thumbnail.selected ? "ok" : s.thumbnail.concepts ? "queued" : "off" };
     case "metadados":
@@ -181,6 +188,7 @@ export function Project() {
       {stage === "cenas" && <ScenesStage project={project} />}
       {stage === "visuais" && <VisualsStage project={project} />}
       {stage === "narracao" && <NarrationStage project={project} />}
+      {stage === "video" && <VideoStage project={project} />}
       {stage === "thumbnail" && <ThumbnailStage project={project} />}
       {stage === "metadados" && <MetadataStage project={project} />}
       {stage === "exportacao" && <ExportStage project={project} />}

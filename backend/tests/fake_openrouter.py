@@ -323,6 +323,9 @@ class FakeOpenRouter:
                     "asset_type": "VIDEO" if vid else "IMAGE_MOTION",
                     "asset_type_reason": "Momento de impacto." if vid else "Imagem com movimento lento.",
                     "motion": ["zoom_in", "pan_right", "zoom_out", "pan_left"][n % 4],
+                    "transition": ["dissolve", "fadeblack", "slide", "dissolve", "flash", "zoom", "blur", "circle"][n % 8],
+                    "sfx": {2: "impact", 4: "whoosh"}.get(n % 5, "none"),
+                    "overlay_text": "1907 · Boêmia" if start == idx[0] and n == 0 else ("Anna, 1956" if n % 6 == 3 else ""),
                 })
             return {"scenes": scenes}
         if name == "scene_rewrite":

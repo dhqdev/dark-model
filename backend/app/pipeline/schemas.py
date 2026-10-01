@@ -31,6 +31,14 @@ RISK_CATEGORIES = (
     "violence_graphic", "hate_harassment", "sexual_content", "dangerous_activities",
     "medical_financial_claims", "child_safety", "privacy", "synthetic_disclosure", "advertiser_unfriendly", "other",
 )
+# edição: transição de entrada da cena, efeito sonoro e texto na tela (decididos pela IA, editáveis)
+TRANSITIONS = ("dissolve", "fadeblack", "flash", "slide", "zoom", "blur", "circle", "cut")
+SFX = ("none", "whoosh", "impact", "riser", "tension", "heartbeat", "wind", "rumble", "clock")
+_TRANSITION_ALIASES = {"fade": "dissolve", "crossfade": "dissolve", "cross_dissolve": "dissolve", "mix": "dissolve",
+                       "fade_to_black": "fadeblack", "fade_black": "fadeblack", "black": "fadeblack",
+                       "fadewhite": "flash", "white": "flash", "flash_white": "flash", "slideleft": "slide",
+                       "slide_left": "slide", "slideright": "slide", "push": "slide", "zoomin": "zoom", "zoom_in": "zoom",
+                       "circleopen": "circle", "iris": "circle", "hard_cut": "cut", "none": "cut"}
 LEARNING_CATEGORIES = ("script", "scenes", "visuals", "narration", "thumbnail", "metadata", "general")
 
 
@@ -210,6 +218,20 @@ class ScriptAnalysis(Lenient):
         return _norm(v, ("approved", "needs_revision", "high_risk"), "needs_revision")
 
 
+def norm_transition(v: object) -> str:
+    key = re.sub(r"[\s\-]+", "_", str(v or "").strip().lower())
+    return _TRANSITION_ALIASES.get(key) or _norm(key, TRANSITIONS, "dissolve")
+
+
+def norm_sfx(v: object) -> str:
+    return _norm(str(v or "none").strip().lower().replace(" ", "_"), SFX, "none")
+
+
+def clean_overlay(v: object) -> str:
+    text = re.sub(r"\s+", " ", str(v or "")).strip().strip('"“”')
+    return "" if text.lower() in ("none", "null", "-", "—") else text[:60]
+
+
 class PlannedScene(Lenient):
     start: int
     end: int
@@ -218,6 +240,24 @@ class PlannedScene(Lenient):
     asset_type: str = _enum(*ASSET_TYPES, default="IMAGE_MOTION")
     asset_type_reason: str = ""
     motion: str = _enum(*MOTIONS, default="zoom_in")
+    transition: str = _enum(*TRANSITIONS, default="dissolve")
+    sfx: str = _enum(*SFX, default="none")
+    overlay_text: str = ""
+
+    @field_validator("transition", mode="before")
+    @classmethod
+    def _tr(cls, v):
+        return norm_transition(v)
+
+    @field_validator("sfx", mode="before")
+    @classmethod
+    def _sx(cls, v):
+        return norm_sfx(v)
+
+    @field_validator("overlay_text", mode="before")
+    @classmethod
+    def _ov(cls, v):
+        return clean_overlay(v)
     ALIASES: ClassVar[dict[str, tuple[str, ...]]] = {
         "start": ("from", "first", "start_sentence", "start_index"),
         "end": ("to", "last", "end_sentence", "end_index"),
