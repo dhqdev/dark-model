@@ -143,8 +143,9 @@ def render_final(ctx: JobContext) -> dict:
     out = work / "final.mp4"
     try:
         try:
-            info = montage.build(shots, out, spec, work / "parts", progress=lambda p, m: ctx.progress(p, m),
-                                 canceled=ctx.canceled)
+            with ctx.keepalive():
+                info = montage.build(shots, out, spec, work / "parts", progress=lambda p, m: ctx.progress(p, m),
+                                     canceled=ctx.canceled)
         except montage.Canceled as exc:
             raise CanceledError("cancelado pelo usuário") from exc
         ctx.progress(0.98, "salvando vídeo final", force=True)

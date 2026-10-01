@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -58,6 +61,30 @@ class JobContext:
             self._last_beat = now
             self._cancel = queue.heartbeat(self.job_id)
         return self._cancel
+
+    @contextmanager
+    def keepalive(self, every: float = 30.0) -> Iterator[None]:
+        """Sinal de vida em segundo plano durante etapas longas sem progresso (ex.: um ffmpeg demorado).
+
+        Sem isso, uma etapa de vários minutos parece um worker travado e a tarefa seria reenfileirada.
+        """
+        stop = threading.Event()
+
+        def beat() -> None:
+            while not stop.wait(every):
+                try:
+                    if queue.heartbeat(self.job_id):
+                        self._cancel = True
+                except Exception:  # noqa: BLE001 - o próximo sinal tenta de novo
+                    logging.getLogger("dark_model.worker").exception("falha no sinal de vida do job %s", self.job_id)
+
+        thread = threading.Thread(target=beat, name=f"keepalive-{self.job_id}", daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            thread.join(timeout=5)
 
     def check_cancel(self) -> None:
         if self.canceled():

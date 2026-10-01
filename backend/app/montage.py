@@ -11,7 +11,9 @@ entrada da cena i acontece no começo dela, misturando o final estendido da cena
 
 from __future__ import annotations
 
+import logging
 import math
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +44,7 @@ FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 )
 
+log = logging.getLogger("dark_model.montage")
 ProgressFn = Callable[[float, str], None]
 CancelFn = Callable[[], bool]
 
@@ -143,8 +146,16 @@ def _last_frame(clip: Path, out: Path) -> Path:
     return out
 
 
-def prepare_source(i: int, shot: Shot, need: float, spec: Spec, work: Path) -> Source:
-    """Vídeo da cena com pelo menos `need` segundos (cena + sobra para a transição seguinte)."""
+def prepare_source(i: int, shot: Shot, need: float, spec: Spec, work: Path,
+                   report: Callable[[float, str], None] | None = None) -> Source:
+    """Vídeo da cena com pelo menos `need` segundos (cena + sobra para a transição seguinte).
+
+    Na maioria das cenas o clipe já existe e nada é feito aqui; `report(fração, o que está fazendo)`
+    informa o andamento quando é preciso gerar movimento (etapa mais pesada da montagem).
+    """
+    def step(what: str, a: float, b: float):
+        return (lambda f: report(a + (b - a) * f, what)) if report else None
+
     if shot.kind == "still" and shot.image:
         return Source(shot.image, True, math.inf)
     if shot.kind == "video" and shot.clip:
@@ -153,16 +164,19 @@ def prepare_source(i: int, shot: Shot, need: float, spec: Spec, work: Path) -> S
             return Source(shot.clip, False, length)
         if length > 0.5:
             # vídeo IA mais curto que a narração: continua com movimento suave sobre o último quadro
+            what = f"completando o vídeo IA com movimento ({need - length:.0f} s)"
+            log.info("montagem: cena %s — %s", i + 1, what)
             last = _last_frame(shot.clip, work / f"last_{i:04d}.jpg")
             tail = work / f"tail_{i:04d}.mp4"
             render_motion(last, tail, need - length + 0.6, shot.motion if shot.motion != "static" else "zoom_in",
-                          width=spec.width, height=spec.height, fps=spec.fps)
+                          width=spec.width, height=spec.height, fps=spec.fps, progress=step(what, 0.0, 0.6))
             joined = work / f"src_{i:04d}.mp4"
             off = max(0.1, length - 0.5)
             graph = (f"[0:v]{_norm(spec)},{_restart(spec)}[a];[1:v]{_norm(spec)},{_restart(spec)}[b];"
                      f"[a][b]xfade=transition=fade:duration=0.5:offset={off:.3f}[v]")
             ffmpeg("-i", str(shot.clip), "-i", str(tail), "-filter_complex", graph, "-map", "[v]", "-an",
-                   "-c:v", "libx264", "-preset", spec.preset, "-crf", str(spec.crf - 2), str(joined), timeout=1800)
+                   "-c:v", "libx264", "-preset", spec.preset, "-crf", str(spec.crf - 2), str(joined), timeout=1800,
+                   progress=step(what, 0.6, 1.0), duration=need)
             return Source(joined, False, video_duration(joined) or need)
     if shot.kind == "motion" and shot.clip:
         length = video_duration(shot.clip)
@@ -171,9 +185,11 @@ def prepare_source(i: int, shot: Shot, need: float, spec: Spec, work: Path) -> S
             return Source(shot.clip, False, length)
     if shot.image:
         # sem clipe pronto: movimento gerado agora a partir da imagem
+        what = f"gerando o movimento da imagem ({need:.0f} s)"
+        log.info("montagem: cena %s — %s", i + 1, what)
         out = work / f"src_{i:04d}.mp4"
         render_motion(shot.image, out, need + 0.2, shot.motion if shot.motion != "static" else "zoom_in",
-                      width=spec.width, height=spec.height, fps=spec.fps)
+                      width=spec.width, height=spec.height, fps=spec.fps, progress=step(what, 0.0, 1.0))
         return Source(out, False, video_duration(out) or need)
     raise MediaError(f"cena {i + 1} sem imagem nem vídeo")
 
@@ -231,22 +247,24 @@ def _text_filters(text: str, length: float, spec: Spec, work: Path, tag: str) ->
 # ------------------------------------------------------------------ pedaços
 
 
-def _encode(inputs: list[str], graph: str, frames: int, out: Path, spec: Spec, work: Path) -> None:
+def _encode(inputs: list[str], graph: str, frames: int, out: Path, spec: Spec, work: Path,
+            progress: Callable[[float], None] | None = None) -> None:
     ffmpeg(*inputs, "-filter_complex", graph, "-map", "[v]", "-an", "-frames:v", str(frames),
            "-c:v", "libx264", "-preset", spec.preset, "-crf", str(spec.crf), "-pix_fmt", "yuv420p",
            "-r", str(spec.fps), "-g", str(spec.fps * 4), "-video_track_timescale", str(spec.fps * 1000),
-           "-f", "mp4", str(out), timeout=1800)
+           "-f", "mp4", str(out), timeout=1800, progress=progress, duration=frames / spec.fps)
 
 
 def _body(i: int, n: int, src: Source, shot: Shot, a: float, length: float, frames: int, spec: Spec,
-          work: Path, simple: bool = False) -> tuple[Path, tuple[float, float, int]]:
+          work: Path, simple: bool = False,
+          progress: Callable[[float], None] | None = None) -> tuple[Path, tuple[float, float, int]]:
     out = work / f"p_{i:04d}_b.mp4"
     pad = f"tpad=stop_mode=clone:stop_duration={length + 1:.3f},{_restart(spec)}"
     chain = [f"[0:v]{_norm(spec)},{pad}[base]"]
     last = "base"
     if simple:
         chain.append("[base]null[v]")
-        _encode(_input(src, a, length, work, f"{i:04d}"), ";".join(chain), frames, out, spec, work)
+        _encode(_input(src, a, length, work, f"{i:04d}"), ";".join(chain), frames, out, spec, work, progress)
         return out, (0.0, 0.0, 0)
     if length > LONG_SCENE and shot.kind != "video":
         # segundo enquadramento: aproxima numa região da imagem no meio da cena (sem gerar imagem nova)
@@ -265,7 +283,7 @@ def _body(i: int, n: int, src: Source, shot: Shot, a: float, length: float, fram
         d = min(FADE_OUT, length / 3)
         filters.append(f"fade=t=out:st={max(0.0, length - d):.3f}:d={d:.3f}")
     chain.append(f"[{last}]{','.join(filters) if filters else 'null'}[v]")
-    _encode(_input(src, a, length, work, f"{i:04d}"), ";".join(chain), frames, out, spec, work)
+    _encode(_input(src, a, length, work, f"{i:04d}"), ";".join(chain), frames, out, spec, work, progress)
     return out, typing
 
 
@@ -353,22 +371,45 @@ def build(shots: list[Shot], out: Path, spec: Spec, work: Path, *, progress: Pro
         if progress:
             progress(done, msg)
 
+    started = time.monotonic()
+    log.info("montagem: %s cenas, %.1f min, %sx%s@%s", n, tl.total / 60, spec.width, spec.height, fps)
     sources: list[Source] = []
     for i, s in enumerate(shots):
         tick(0.02 + 0.13 * i / n, f"preparando cena {i + 1}/{n}")
         need = s.duration + (tl.trans[i + 1][1] if i + 1 < n else 0.0)
+
+        def report(f: float, what: str, i: int = i) -> None:
+            tick(0.02 + 0.13 * (i + f) / n, f"preparando cena {i + 1}/{n}: {what} {f * 100:.0f}%")
+
+        t0 = time.monotonic()
         try:
-            sources.append(prepare_source(i, s, need, spec, work))
+            sources.append(prepare_source(i, s, need, spec, work, report))
         except MediaError as exc:
             if not s.image:
                 raise
             spec.warnings.append(f"cena {i + 1}: clipe com problema, usada a imagem parada ({_short(exc)})")
             sources.append(Source(s.image, True, math.inf))
+        if time.monotonic() - t0 > 5:
+            log.info("montagem: cena %s preparada em %.0f s", i + 1, time.monotonic() - t0)
+    log.info("montagem: cenas preparadas em %.0f s", time.monotonic() - started)
 
     pieces: list[Path] = []
     typing: list[tuple[int, float, float, int]] = []
+    total_frames = max(1, _frame(tl.total, fps))
+    phase = time.monotonic()
+
+    def piece_tick(at_frame: float, i: int) -> None:
+        f = min(1.0, at_frame / total_frames)
+        elapsed = time.monotonic() - phase
+        eta = ""
+        if f > 0.03 and elapsed > 10:
+            left = elapsed / f * (1 - f)
+            eta = f" · faltam ~{max(1, round(left / 60))} min" if left >= 60 else f" · faltam ~{max(5, round(left))} s"
+        tick(0.15 + 0.72 * f, f"montando cena {i + 1}/{n}{eta}")
+
     for i, s in enumerate(shots):
-        tick(0.15 + 0.7 * i / n, f"montando cena {i + 1}/{n}")
+        start_frame = _frame(tl.starts[i], fps)
+        piece_tick(start_frame, i)
         name, d = tl.trans[i]
         if i > 0 and name:
             frames = _frame(tl.starts[i] + d, fps) - _frame(tl.starts[i], fps)
@@ -386,14 +427,21 @@ def build(shots: list[Shot], out: Path, spec: Spec, work: Path, *, progress: Pro
         frames = _frame(body_end, fps) - _frame(body_start, fps)
         if frames > 0:
             args = (i, n, sources[i], s, d if name else 0.0, body_end - body_start, frames, spec, work)
+            first = _frame(body_start, fps)
+
+            def body_progress(f: float, i: int = i, first: int = first, frames: int = frames) -> None:
+                piece_tick(first + f * frames, i)
+
             try:
-                piece, (t0, dt, chars) = _body(*args)
+                piece, (t0, dt, chars) = _body(*args, progress=body_progress)
             except MediaError as exc:
                 spec.warnings.append(f"cena {i + 1}: sem texto/efeito visual ({_short(exc)})")
-                piece, (t0, dt, chars) = _body(*args, simple=True)
+                log.warning("montagem: cena %s refeita sem texto/efeito: %s", i + 1, _short(exc))
+                piece, (t0, dt, chars) = _body(*args, simple=True, progress=body_progress)
             pieces.append(piece)
             typing.append((i, t0, dt, chars))
 
+    log.info("montagem: cenas codificadas em %.0f s", time.monotonic() - phase)
     tick(0.87, "mixando narração e efeitos sonoros")
     audio = work / "mix.wav"
     _audio(shots, tl, typing, audio, work)
@@ -404,6 +452,7 @@ def build(shots: list[Shot], out: Path, spec: Spec, work: Path, *, progress: Pro
     ffmpeg("-f", "concat", "-safe", "0", "-i", str(listing), "-i", str(audio), "-map", "0:v", "-map", "1:a",
            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", str(out),
            timeout=3600)
+    log.info("montagem concluída em %.0f s (%s avisos)", time.monotonic() - started, len(spec.warnings))
     return {"duration": tl.total, "pieces": len(pieces), "scenes": n,
             "transitions": sum(1 for name, _ in tl.trans if name), "overlays": sum(1 for *_, c in typing if c),
             "sfx": sum(1 for s in shots if s.sfx in sfx.EFFECTS), "warnings": spec.warnings}

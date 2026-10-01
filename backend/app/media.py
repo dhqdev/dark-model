@@ -8,6 +8,9 @@ import json
 import re
 import subprocess
 import tempfile
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -23,7 +26,7 @@ class MediaError(Exception):
 
 def run(args: list[str], timeout: int = 900) -> subprocess.CompletedProcess[bytes]:
     try:
-        proc = subprocess.run(args, capture_output=True, timeout=timeout, check=False)
+        proc = subprocess.run(args, capture_output=True, timeout=timeout, check=False, stdin=subprocess.DEVNULL)
     except FileNotFoundError as exc:  # pragma: no cover - depende do ambiente
         raise MediaError(f"executável não encontrado: {args[0]}") from exc
     except subprocess.TimeoutExpired as exc:
@@ -34,8 +37,45 @@ def run(args: list[str], timeout: int = 900) -> subprocess.CompletedProcess[byte
     return proc
 
 
-def ffmpeg(*args: str, timeout: int = 900) -> None:
-    run([get_settings().ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-y", *args], timeout=timeout)
+def ffmpeg(*args: str, timeout: int = 900, progress: Callable[[float], None] | None = None,
+           duration: float | None = None) -> None:
+    """Roda o ffmpeg. Com `progress` e `duration`, informa o andamento (0→1) enquanto codifica."""
+    base = [get_settings().ffmpeg_bin, "-hide_banner", "-nostdin", "-loglevel", "error", "-y"]
+    if progress is None or not duration:
+        run([*base, *args], timeout=timeout)
+        return
+    _run_with_progress([*base, "-progress", "pipe:1", "-nostats", *args], timeout, progress, float(duration))
+
+
+def _run_with_progress(cmd: list[str], timeout: int, progress: Callable[[float], None], duration: float) -> None:
+    start = time.monotonic()
+    with tempfile.TemporaryFile() as err:
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err, stdin=subprocess.DEVNULL, text=True)
+        except FileNotFoundError as exc:  # pragma: no cover - depende do ambiente
+            raise MediaError(f"executável não encontrado: {cmd[0]}") from exc
+        killer = threading.Timer(timeout, proc.kill)
+        killer.start()
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                key, _, value = line.strip().partition("=")
+                if key in ("out_time_us", "out_time_ms") and value.isdigit():
+                    progress(min(1.0, int(value) / 1_000_000 / duration))
+            proc.wait()
+        except BaseException:
+            # cancelamento (ou erro no callback): não deixa o ffmpeg rodando sozinho
+            proc.kill()
+            proc.wait()
+            raise
+        finally:
+            killer.cancel()
+        if proc.returncode != 0:
+            if time.monotonic() - start >= timeout:
+                raise MediaError(f"{Path(cmd[0]).name} excedeu {timeout}s")
+            err.seek(0)
+            tail = err.read().decode(errors="replace").strip().splitlines()[-6:]
+            raise MediaError(f"{Path(cmd[0]).name} falhou: " + " | ".join(tail))
 
 
 def _probe_with_ffmpeg(path: Path) -> dict:
@@ -171,6 +211,7 @@ def render_motion(
     width: int = 1920,
     height: int = 1080,
     fps: int = 30,
+    progress: Callable[[float], None] | None = None,
 ) -> None:
     """Gera um clipe MP4 a partir de uma imagem com movimento de câmera (zoom/pan)."""
     duration = max(1.0, float(duration))
@@ -187,7 +228,7 @@ def render_motion(
         "-i", str(image_path), "-vf", vf, "-frames:v", str(frames),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-movflags", "+faststart",
         str(out_path),
-        timeout=1800,
+        timeout=1800, progress=progress, duration=frames / fps,
     )
 
 
