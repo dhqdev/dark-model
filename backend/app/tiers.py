@@ -29,17 +29,18 @@ OPERATION_LABELS = {
 CATALOG_KIND = {"text": "text", "image": "image", "thumbnail": "image", "tts": "speech", "video": "video"}
 
 TIER_PARAMS: dict[str, dict[str, Any]] = {
+    # min_scene_seconds: cenas mais longas = menos imagens (a imagem é o maior custo do vídeo)
     Quality.ECONOMY: {
         "image_resolution": "1K", "video_resolution": "480p", "thumb_concepts": 2, "thumb_variations": 1,
-        "video_share": 0.0, "reasoning": "low",
+        "video_share": 0.0, "reasoning": "low", "min_scene_seconds": 12,
     },
     Quality.BALANCED: {
         "image_resolution": "1K", "video_resolution": "720p", "thumb_concepts": 3, "thumb_variations": 2,
-        "video_share": 0.08, "reasoning": None,
+        "video_share": 0.03, "reasoning": None, "min_scene_seconds": 9,
     },
     Quality.PREMIUM: {
         "image_resolution": "2K", "video_resolution": "1080p", "thumb_concepts": 4, "thumb_variations": 2,
-        "video_share": 0.15, "reasoning": "medium",
+        "video_share": 0.10, "reasoning": "medium", "min_scene_seconds": 0,
     },
 }
 
@@ -54,14 +55,15 @@ PREFERRED: dict[str, dict[str, list[str]]] = {
                           rf"^google/gemini-{_V}-pro(-preview)?$"],
     },
     "image": {
-        Quality.ECONOMY: [rf"^google/gemini-{_V}-flash-image(-preview)?$", r"^black-forest-labs/flux"],
+        # vazio = escolhe o modelo com o menor preço real por imagem
+        Quality.ECONOMY: [],
         Quality.BALANCED: [rf"^google/gemini-{_V}-flash-image(-preview)?$", rf"^openai/gpt-image-{_V}-mini$"],
         Quality.PREMIUM: [rf"^google/gemini-{_V}-pro-image(-preview)?$", rf"^openai/gpt-image-{_V}$",
                           rf"^openai/gpt-{_V}-image$"],
     },
     "thumbnail": {
         Quality.ECONOMY: [rf"^google/gemini-{_V}-flash-image(-preview)?$"],
-        Quality.BALANCED: [rf"^google/gemini-{_V}-pro-image(-preview)?$", rf"^google/gemini-{_V}-flash-image(-preview)?$"],
+        Quality.BALANCED: [rf"^google/gemini-{_V}-flash-image(-preview)?$", rf"^openai/gpt-image-{_V}-mini$"],
         Quality.PREMIUM: [rf"^google/gemini-{_V}-pro-image(-preview)?$", rf"^openai/gpt-image-{_V}$",
                           rf"^openai/gpt-{_V}-image$"],
     },
@@ -76,6 +78,11 @@ PREFERRED: dict[str, dict[str, list[str]]] = {
         Quality.PREMIUM: [r"^google/veo[\w.-]*", r"^openai/sora[\w.-]*pro", r"^openai/sora[\w.-]*"],
     },
 }
+
+
+# nessas operações o preço por unidade domina o custo do vídeo: fora do Premium, dentro da família
+# preferida vale a versão mais barata com preço real (não a mais nova)
+PRICE_FIRST = ("image", "thumbnail", "video")
 
 
 @dataclass
@@ -117,6 +124,11 @@ def save_tier_settings(db: Session, data: dict[str, dict[str, Any]]) -> dict[str
     return current
 
 
+_NOT_TEXT_TO_IMAGE = re.compile(
+    r"(edit|kontext|upscal|inpaint|outpaint|remov|background|vector|svg|quiver|relight|restor|fill)", re.I
+)
+
+
 def _version_key(model: dict[str, Any]) -> tuple:
     return (model.get("created") or 0, model.get("id") or "")
 
@@ -143,11 +155,14 @@ def _candidates(op: str) -> list[dict[str, Any]]:
                 continue
         if op == "video" and (m.get("upscale_factor") or m.get("creativity")):
             continue  # modelos de upscale não geram vídeo
+        if CATALOG_KIND[op] == "image" and _NOT_TEXT_TO_IMAGE.search(mid):
+            continue  # edição, upscale, remoção de fundo, vetorização
         out.append(m)
     return out
 
 
-def _price_key(op: str, m: dict[str, Any]) -> float | None:
+def _price_key(db: Session, op: str, m: dict[str, Any], tier: str) -> float | None:
+    """Custo comparável entre modelos da mesma operação (só com preço real)."""
     from . import pricing
 
     if op == "text":
@@ -155,15 +170,37 @@ def _price_key(op: str, m: dict[str, Any]) -> float | None:
         return None if p is None else p[0] * 3 + p[1]
     if op == "tts":
         p = pricing.token_prices(m)
-        return None if p is None else p[0] + p[1]
+        if p is None:
+            return None
+        # custo de ~1.000 caracteres (~67 s de áudio); cobrança por caractere ou por token
+        if p[1]:
+            return 250 * p[0] + 67 * pricing.AUDIO_TOKENS_PER_SECOND * p[1]
+        return 1000 * p[0]
+    if op in ("image", "thumbnail"):
+        c = pricing.image_cost(db, m["id"], TIER_PARAMS[Quality(tier)]["image_resolution"])
+        return c.value if c.source in ("live", "history") else None
     if op == "video":
         cost, _ = pricing.video_skus_cost(m.get("pricing_skus") or {}, resolution="720p", duration=5)
         return cost
     return None
 
 
-def _auto_pick(op: str, tier: str, cands: list[dict[str, Any]]) -> dict[str, Any] | None:
-    priced = [(k, m) for m in cands if (k := _price_key(op, m)) is not None and k > 0]
+def _priced(db: Session, op: str, tier: str, cands: list[dict[str, Any]]) -> list[tuple[float, dict[str, Any]]]:
+    if CATALOG_KIND[op] == "image":
+        catalog.prefetch_image_endpoints([m["id"] for m in cands])
+    return [(k, m) for m in cands if (k := _price_key(db, op, m, tier)) is not None and k > 0]
+
+
+def _cheapest(db: Session, op: str, tier: str, cands: list[dict[str, Any]]) -> dict[str, Any] | None:
+    priced = _priced(db, op, tier, cands)
+    if not priced:
+        return None
+    # empate de preço: a versão mais nova
+    return min(priced, key=lambda x: (x[0], -(x[1].get("created") or 0)))[1]
+
+
+def _auto_pick(db: Session, op: str, tier: str, cands: list[dict[str, Any]]) -> dict[str, Any] | None:
+    priced = _priced(db, op, tier, cands)
     if priced:
         priced.sort(key=lambda x: x[0])
         if tier == Quality.ECONOMY:
@@ -187,11 +224,17 @@ def resolve_model(db: Session, op: str, tier: str, *, settings: dict[str, Any] |
         rx = re.compile(pattern)
         matches = [m for m in cands if rx.search(str(m.get("id")))]
         if matches:
+            if op in PRICE_FIRST and tier != Quality.PREMIUM:
+                cheapest = _cheapest(db, op, tier, matches)
+                if cheapest:
+                    return Resolved(cheapest["id"], "preferred", "família preferida, opção mais barata (preço real)")
             best = max(matches, key=_version_key)
             return Resolved(best["id"], "preferred", "família preferida, versão mais nova do catálogo")
-    picked = _auto_pick(op, tier, cands)
+    picked = _auto_pick(db, op, tier, cands)
     if picked:
-        return Resolved(picked["id"], "auto", "escolhido pela faixa de preço do catálogo")
+        note = ("o mais barato do catálogo (preço real)" if tier == Quality.ECONOMY
+                else "escolhido pela faixa de preço do catálogo")
+        return Resolved(picked["id"], "auto", note)
     return Resolved(None, "missing", "nenhum modelo compatível no catálogo da OpenRouter")
 
 

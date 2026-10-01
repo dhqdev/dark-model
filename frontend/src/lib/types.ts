@@ -345,6 +345,7 @@ export interface TierConfig {
   thumb_variations: number;
   video_share: number;
   reasoning: string | null;
+  min_scene_seconds: number;
 }
 
 export interface SettingsData {
@@ -368,6 +369,8 @@ export interface CatalogModel {
   voices?: string[];
   per_char?: boolean;
   image_api?: boolean;
+  per_image?: number | null;
+  price_source?: string;
   per_second_720p?: number | null;
   price_note?: string;
   durations?: number[] | null;

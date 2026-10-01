@@ -47,6 +47,8 @@ def test_full_pipeline(auth, fake):
     assert est["tiers"]["BALANCED"]["models"]["text"] == "anthropic/claude-sonnet-4.5"
     assert est["tiers"]["PREMIUM"]["models"]["text"] == "anthropic/claude-opus-4.5"
     assert est["tiers"]["ECONOMY"]["models"]["text"] == "google/gemini-3-flash-preview"
+    # cenas mais longas nos níveis baratos = menos imagens
+    assert est["tiers"]["ECONOMY"]["scenes"] <= est["tiers"]["BALANCED"]["scenes"] <= est["tiers"]["PREMIUM"]["scenes"]
 
     # 1. roteiro
     assert auth.post(f"/api/projects/{pid}/analyze").status_code == 200

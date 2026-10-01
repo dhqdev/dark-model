@@ -28,6 +28,11 @@ def model_for(db: Session, op: str, tier: str) -> str:
     return resolved.model
 
 
+def effective_scene_seconds(channel: Channel, tier_params: dict[str, Any]) -> float:
+    """Segundos por cena: o do canal, respeitando o mínimo do nível (cenas longas = menos imagens)."""
+    return max(float(channel.scene_seconds or 7.0), float(tier_params.get("min_scene_seconds") or 0))
+
+
 def visual_hash(scene: Scene, visual_style: str) -> str:
     return text.content_hash(scene.prompt.strip(), visual_style.strip())
 

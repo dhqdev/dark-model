@@ -91,14 +91,21 @@ automaticamente; saldo insuficiente (402) ou bloqueio de moderação param com a
 | | ECONOMY | BALANCED (padrão) | PREMIUM |
 |---|---|---|---|
 | Texto | família Gemini Flash | família Claude Sonnet | família Claude Opus |
-| Imagens | Gemini Flash Image · 1K | Gemini Flash Image · 1K | Gemini Pro Image · 2K |
-| Thumbnails | 2 conceitos × 1 | 3 × 2 (Pro Image) | 4 × 2 (Pro Image) |
-| Vídeo IA | não usa | até ~8% das cenas · 720p | até ~15% das cenas · 1080p |
+| Imagens | o mais barato do catálogo · 1K | Gemini Flash Image (versão mais barata) · 1K | Gemini Pro Image · 2K |
+| Cena mínima | 12 s (menos imagens) | 9 s | a do canal |
+| Thumbnails | 2 conceitos × 1 | 3 × 2 (Flash Image) | 4 × 2 (Pro Image) |
+| Vídeo IA | não usa | até ~3% das cenas · 720p | até ~10% das cenas · 1080p |
 
-Os modelos **não são fixos no código**: o sistema lê o **catálogo real da OpenRouter** e escolhe a
-versão mais nova da família preferida; se a família não existir, escolhe pela faixa de preço. Em
-**Configurações** você fixa qualquer modelo por nível e operação (texto, imagem, thumbnail, TTS,
-vídeo), resolução, % de vídeo, quantidade de thumbnails e esforço de raciocínio.
+Os modelos **não são fixos no código**: o sistema lê o **catálogo real da OpenRouter**. Para texto e
+narração vale a versão mais nova da família preferida; para imagem, thumbnail e vídeo, fora do
+Premium, vale a opção **mais barata com preço real** (no Economy, a mais barata do catálogo inteiro).
+Se a família não existir, escolhe pela faixa de preço. Em **Configurações** você fixa qualquer modelo
+por nível e operação (a lista mostra o preço e pode ser ordenada do mais barato), resolução, duração
+mínima por cena, % de vídeo, quantidade de thumbnails e esforço de raciocínio.
+
+**Onde está o custo:** em um vídeo de ~19 min, quase todo o valor vem das **imagens** (uma por cena)
+e do **vídeo IA**. Texto e narração custam centavos. Para baixar o total: aumente os *segundos por
+cena* do canal (12–15 s), deixe o vídeo IA em 0% e escolha um modelo de imagem barato.
 
 ### Estimativa antes de gerar (os três níveis lado a lado)
 Cada linha mostra a origem do número:

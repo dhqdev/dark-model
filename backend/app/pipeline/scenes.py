@@ -9,7 +9,7 @@ from ..db import session_scope
 from ..jobs.context import JobContext, handler
 from ..models import Asset, FeedbackEvent, Scene, utcnow
 from . import prompts, text
-from .common import StageError, delete_asset_files, load_project, load_scene, model_for
+from .common import StageError, delete_asset_files, effective_scene_seconds, load_project, load_scene, model_for
 from .context import full_context
 from .llm import call_json
 from .schemas import PlannedScene, ScenePlan, SceneRewrite
@@ -65,7 +65,7 @@ def plan_scenes(ctx: JobContext) -> dict:
         model = model_for(db, "text", tier)
         params = tiers.tier_params(db, tier)
         wpm = channel.words_per_minute or text.default_wpm(channel.language)
-        scene_seconds = channel.scene_seconds or 7.0
+        scene_seconds = effective_scene_seconds(channel, params)
         video_percent = int(round(float(params.get("video_share") or 0) * 100))
         context = full_context(db, project)
         visual_style = channel.visual_style

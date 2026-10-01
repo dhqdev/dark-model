@@ -176,7 +176,7 @@ export function ChannelForm({
               onChange={(e) => set("words_per_minute", e.target.value ? Number(e.target.value) : null)}
             />
           </Field>
-          <Field label="Segundos por cena" hint="média alvo">
+          <Field label="Segundos por cena" hint="cada cena = 1 imagem; cenas longas custam menos">
             <input className="input tnum" type="number" min={2} max={30} step={0.5} value={d.scene_seconds} onChange={(e) => set("scene_seconds", Number(e.target.value))} />
           </Field>
         </div>

@@ -77,8 +77,22 @@ IMAGE_MODELS = [
                               "output_format": {"type": "enum", "values": ["png", "jpeg"]}},
      "supports_streaming": False},
 ]
+_SIMPLE_IMAGE_PARAMS = {"aspect_ratio": {"type": "enum", "values": ["1:1", "16:9", "9:16"]},
+                        "output_format": {"type": "enum", "values": ["png", "jpeg"]}}
+# versão mais nova e mais cara da mesma família, um modelo barato e um upscaler (não gera do zero)
+for _mid, _created in (("google/gemini-3.1-flash-image-preview", NOW - 900_000),
+                       ("black-forest-labs/flux.2-klein-4b", NOW - 2_000_000),
+                       ("acme/image-upscaler", NOW - 100_000)):
+    IMAGE_MODELS.append({"id": _mid, "name": _mid, "created": _created, "description": "test image model",
+                         "endpoints": f"/api/v1/images/models/{_mid}/endpoints",
+                         "architecture": {"input_modalities": ["text"], "output_modalities": ["image"]},
+                         "supported_parameters": _SIMPLE_IMAGE_PARAMS, "supports_streaming": False})
+
 IMAGE_PRICING = {
     "google/gemini-2.5-flash-image": [{"billable": "output_image", "cost_usd": 0.039, "unit": "image"}],
+    "google/gemini-3.1-flash-image-preview": [{"billable": "output_image", "cost_usd": 0.067, "unit": "image", "variant": "1K"}],
+    "black-forest-labs/flux.2-klein-4b": [{"billable": "output_image", "cost_usd": 0.014, "unit": "image"}],
+    "acme/image-upscaler": [{"billable": "output_image", "cost_usd": 0.001, "unit": "image"}],
     "google/gemini-3-pro-image-preview": [
         {"billable": "output_image", "cost_usd": 0.134, "unit": "image", "variant": "1K"},
         {"billable": "output_image", "cost_usd": 0.134, "unit": "image", "variant": "2K"},

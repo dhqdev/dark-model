@@ -45,3 +45,20 @@ def test_image_and_llm_prices_from_catalog(fake, client):
         assert round(tts.value, 4) == 0.16 and tts.source == "live"
     finally:
         db.close()
+
+
+def test_tiers_pick_cheapest_images_outside_premium(fake, client):
+    from app import tiers
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        # Econômico: o mais barato do catálogo (o upscaler, mais barato ainda, não gera imagem do zero)
+        assert tiers.resolve_model(db, "image", "ECONOMY").model == "black-forest-labs/flux.2-klein-4b"
+        # Equilibrado: família preferida, mas a versão mais barata — não a mais nova
+        assert tiers.resolve_model(db, "image", "BALANCED").model == "google/gemini-2.5-flash-image"
+        assert tiers.resolve_model(db, "thumbnail", "BALANCED").model == "google/gemini-2.5-flash-image"
+        # Premium: a mais nova da família pro
+        assert tiers.resolve_model(db, "image", "PREMIUM").model == "google/gemini-3-pro-image-preview"
+    finally:
+        db.close()

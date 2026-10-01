@@ -15,7 +15,7 @@ from .. import catalog, pricing, tiers
 from ..models import AssetType, Project, Quality
 from ..providers.registry import split_ref
 from . import text
-from .common import tts_settings
+from .common import effective_scene_seconds, tts_settings
 from .context import full_context
 
 CHARS_PER_TOKEN = {"en": 4.0, "pt": 3.6, "es": 3.6, "fr": 3.6, "it": 3.6, "de": 3.5, "nl": 3.6, "pl": 3.0,
@@ -79,6 +79,7 @@ def project_inputs(db: Session, project: Project) -> dict[str, Any]:
         seconds = [minutes * 60 / n] * n
         video_secs = None
         narr_chars = chars
+    # sem cenas planejadas, a quantidade depende do nível (duração mínima por cena)
     return {
         "words": words, "chars": chars, "minutes": round(minutes, 2), "scenes": n, "seconds": sum(seconds),
         "avg_scene_seconds": sum(seconds) / n if n else 0, "video_secs": video_secs, "narration_chars": narr_chars,
@@ -99,22 +100,27 @@ def estimate_project(db: Session, project: Project) -> dict[str, Any]:
         cfg = tier_cfg[t]
         models = {op: tiers.resolve_model(db, op, t, settings=tier_cfg).model for op in tiers.OPERATIONS}
         lines: list[dict[str, Any]] = []
+        if inputs["scenes_planned"]:
+            n_scenes, avg_secs = inputs["scenes"], inputs["avg_scene_seconds"]
+        else:
+            n_scenes = max(1, round(inputs["seconds"] / effective_scene_seconds(channel, cfg)))
+            avg_secs = inputs["seconds"] / n_scenes
         text_model = models["text"]
         # 1 roteiro
         lines.append(_llm_line(db, "script", "Análise do roteiro", text_model,
                                ctx_tokens + script_tokens + PROMPT_OVERHEAD, 3200))
         # 2 cenas
         blocks = max(1, math.ceil(inputs["words"] / 650))
-        lines.append(_llm_line(db, "scenes", f"Divisão em {inputs['scenes']} cenas ({blocks} blocos)", text_model,
+        lines.append(_llm_line(db, "scenes", f"Divisão em {n_scenes} cenas ({blocks} blocos)", text_model,
                                blocks * (ctx_tokens + PROMPT_OVERHEAD) + int(script_tokens * 1.15) + 200 * blocks,
-                               0, units=inputs["scenes"], per_unit_default=170))
+                               0, units=n_scenes, per_unit_default=170))
         # 3 visuais
-        n = inputs["scenes"]
+        n = n_scenes
         if inputs["video_secs"] is not None:
             video_secs = inputs["video_secs"]
         else:
             n_video = int(round(n * float(cfg.get("video_share") or 0)))
-            video_secs = [inputs["avg_scene_seconds"]] * n_video
+            video_secs = [avg_secs] * n_video
         img_model = models["image"]
         img_unit = pricing.image_cost(db, split_ref(img_model)[1], cfg.get("image_resolution")) if img_model else None
         img_cost = pricing.Cost(img_unit.value * n, img_unit.source, img_unit.note) if img_unit and img_unit.value is not None else img_unit
@@ -167,6 +173,7 @@ def estimate_project(db: Session, project: Project) -> dict[str, Any]:
         priced = [ln for ln in lines if ln["cost"] is not None]
         total = sum(ln["cost"] for ln in priced)
         result[t] = {
+            "scenes": n_scenes,
             "total": round(total, 4),
             "complete": len(priced) == len(lines),
             "missing": [ln["label"] for ln in lines if ln["cost"] is None],

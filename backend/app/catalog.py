@@ -186,6 +186,18 @@ def image_endpoints(model_id: str) -> list[dict[str, Any]]:
         return []
 
 
+def prefetch_image_endpoints(model_ids: list[str], workers: int = 8) -> None:
+    """Busca em paralelo os preços (endpoints) dos modelos de imagem que ainda não estão em cache."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    api_ids = {m.get("id") for m in safe_get(KINDS["image"])}
+    missing = [m for m in model_ids if m in api_ids and _load(f"images:endpoints:{m}") is None]
+    if not missing or not get_settings().openrouter_configured:
+        return
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        list(pool.map(image_endpoints, missing))
+
+
 def video_model(model_id: str) -> dict[str, Any] | None:
     return _find(safe_get(KINDS["video"]), model_id)
 

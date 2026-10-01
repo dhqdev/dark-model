@@ -81,7 +81,8 @@ def _per_million(value: Any) -> float | None:
 
 
 @router.get("/catalog/{kind}")
-def catalog_list(kind: str, q: str = "", limit: int = 400) -> list[dict]:
+def catalog_list(kind: str, q: str = "", limit: int = 400, resolution: str = "1K",
+                 db: Session = Depends(get_db)) -> list[dict]:
     if kind not in ("text", "image", "speech", "video"):
         raise HTTPException(404, "tipo de catálogo inválido")
     if kind == "image":
@@ -91,6 +92,8 @@ def catalog_list(kind: str, q: str = "", limit: int = 400) -> list[dict]:
     else:
         items = catalog.safe_get(catalog.KINDS[kind])
     ql = q.lower().strip()
+    if kind == "image":
+        catalog.prefetch_image_endpoints([str(m.get("id")) for m in items])
     out = []
     for m in items:
         mid = str(m.get("id") or "")
@@ -109,6 +112,8 @@ def catalog_list(kind: str, q: str = "", limit: int = 400) -> list[dict]:
             row["per_char"] = not float(p.get("completion") or 0)
         if kind == "image":
             row["image_api"] = "supported_parameters" in m and isinstance(m.get("supported_parameters"), dict)
+            c = pricing.image_cost(db, mid, resolution)
+            row.update({"per_image": c.value, "price_source": c.source, "price_note": c.note})
         if kind == "video":
             cost, note = pricing.video_skus_cost(m.get("pricing_skus") or {}, resolution="720p", duration=1)
             row.update({"per_second_720p": cost, "price_note": note, "durations": m.get("supported_durations"),

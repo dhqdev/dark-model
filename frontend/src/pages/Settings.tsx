@@ -21,19 +21,28 @@ const SOURCE: Record<string, { label: string; tone: "amber" | "ok" | "info" | "e
 function priceOf(m: CatalogModel, kind: string): string {
   if (kind === "video") return m.per_second_720p != null ? `${usd(m.per_second_720p)}/s (720p)` : "preço por SKU";
   if (kind === "speech") return m.per_char ? `$${m.prompt_per_m}/1M caract.` : `$${m.prompt_per_m} · $${m.completion_per_m} /1M tok`;
-  if (kind === "image") return m.image_api ? "API de imagens" : `via chat · $${m.completion_per_m}/1M tok`;
+  if (kind === "image")
+    return m.per_image != null ? `${usd(m.per_image)}/imagem${m.price_source === "heuristic" ? " (aprox.)" : ""}` : "preço após 1ª imagem";
   return m.prompt_per_m != null ? `$${m.prompt_per_m} in · $${m.completion_per_m} out /1M` : "—";
 }
 
 function ModelPicker({ op, tier, current, onPick, onClose }: { op: Op; tier: Quality; current: string | null; onPick: (id: string | null) => void; onClose: () => void }) {
   const kind = OP_KIND[op];
   const [q, setQ] = useState("");
+  const [byPrice, setByPrice] = useState(true);
   const { data, isLoading } = useQuery({ queryKey: ["catalog", kind], queryFn: () => api.get<CatalogModel[]>(`/catalog/${kind}`), staleTime: 300_000 });
-  const list = useMemo(() => (data ?? []).filter((m) => !q || m.id.toLowerCase().includes(q.toLowerCase()) || m.name.toLowerCase().includes(q.toLowerCase())), [data, q]);
+  const list = useMemo(() => {
+    const filtered = (data ?? []).filter((m) => !q || m.id.toLowerCase().includes(q.toLowerCase()) || m.name.toLowerCase().includes(q.toLowerCase()));
+    if (!byPrice) return filtered;
+    const price = (m: CatalogModel) =>
+      kind === "image" ? m.per_image : kind === "video" ? m.per_second_720p : kind === "speech" ? m.prompt_per_m : m.prompt_per_m != null ? m.prompt_per_m * 3 + (m.completion_per_m ?? 0) : null;
+    return [...filtered].sort((a, b) => (price(a) ?? Infinity) - (price(b) ?? Infinity));
+  }, [data, q, byPrice, kind]);
   return (
     <Modal open onClose={onClose} title={`${QUALITY_LABEL[tier]} · ${op}`} wide>
       <div className="mb-3 flex gap-2">
         <input className="input" placeholder="Buscar modelo…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        <Btn onClick={() => setByPrice((v) => !v)}>{byPrice ? "Mais baratos primeiro" : "Mais novos primeiro"}</Btn>
         <Btn onClick={() => onPick(null)}>Automático</Btn>
       </div>
       {isLoading && <Loading />}
@@ -130,8 +139,10 @@ export function Settings() {
             }
           >
             <p className="mb-4 text-[12.5px] text-muted">
-              Sem um modelo fixado, o sistema escolhe no catálogo real da OpenRouter a versão mais nova da família preferida (ex.: Claude Sonnet no Balanced) ou, se ela não
-              existir, pela faixa de preço. Clique num modelo para fixar outro.
+              Sem um modelo fixado, o sistema escolhe no catálogo real da OpenRouter: no Economy, as imagens usam o modelo com o menor preço real por imagem; no
+              Balanced, a opção mais barata da família preferida para imagem, thumbnail e vídeo; texto e narração usam a versão mais nova (ex.: Claude Sonnet no
+              Balanced). O maior custo de um vídeo são as imagens: cenas mais longas e menos vídeo IA reduzem bastante o total. Clique num modelo para fixar outro
+              (a lista mostra o preço).
             </p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] border-collapse text-[13px]">
@@ -188,6 +199,16 @@ export function Settings() {
                             <option key={r}>{r}</option>
                           ))}
                         </select>
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-line">
+                    <td className="py-2.5 pr-3 text-muted" title="Cenas mais longas = menos imagens geradas. O canal pode pedir cenas ainda mais longas.">
+                      Duração mínima por cena (s)
+                    </td>
+                    {TIERS.map((t) => (
+                      <td key={t} className="py-2 pl-3">
+                        <input className="input tnum py-1.5" type="number" min={0} max={30} value={tiers[t].min_scene_seconds ?? 0} onChange={(e) => setParam(t, "min_scene_seconds", Number(e.target.value))} />
                       </td>
                     ))}
                   </tr>
