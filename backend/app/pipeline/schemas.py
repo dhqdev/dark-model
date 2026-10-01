@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any, ClassVar, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -43,7 +44,9 @@ LEARNING_CATEGORIES = ("script", "scenes", "visuals", "narration", "thumbnail", 
 
 
 def _key(name: object) -> str:
-    return re.sub(r"[\s\-]+", "_", str(name).strip()).lower()
+    # "Título" → "titulo", "starts with" → "starts_with" (modelos às vezes traduzem os nomes dos campos)
+    plain = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode()
+    return re.sub(r"[\s\-]+", "_", plain.strip()).lower()
 
 
 def _as_text(value: Any) -> str:
@@ -82,7 +85,12 @@ class Lenient(BaseModel):
             elif get_origin(ann) is list:
                 item = (get_args(ann) or (Any,))[0]
                 if not isinstance(value, list):
-                    value = [_as_text(value)] if item is str and value != "" else []
+                    if item is str and isinstance(value, str):
+                        # "a, b, c" ou uma por linha → lista
+                        sep = "\n" if "\n" in value else ","
+                        value = [v.strip() for v in value.split(sep) if v.strip()]
+                    else:
+                        value = [_as_text(value)] if item is str and value != "" else []
                 elif item is str:
                     value = [_as_text(v) for v in value if v not in (None, "")]
                 elif isinstance(item, type) and issubclass(item, Lenient):
@@ -95,6 +103,12 @@ class Lenient(BaseModel):
                     # se nenhum item serve, mantém o original para o erro aparecer (e o modelo corrigir)
                     value = kept if kept or not value else value
             out[name] = value
+        # campo de texto obrigatório que não veio com nenhum nome conhecido: usa o texto que sobrou no item
+        known = set(cls.model_fields) | {a for names in cls.ALIASES.values() for a in names}
+        spare = [v for k, v in raw.items() if k not in known and isinstance(v, str) and v.strip()]
+        for name, field in cls.model_fields.items():
+            if name not in out and field.is_required() and field.annotation is str and spare:
+                out[name] = spare.pop(0)
         return out
 
 
@@ -320,11 +334,19 @@ class ThumbConcepts(Lenient):
 class TitleOption(Lenient):
     title: str
     angle: str = ""
+    ALIASES: ClassVar[dict[str, tuple[str, ...]]] = {
+        "title": ("titulo", "text", "texto", "headline", "name", "value", "option", "title_text", "suggestion"),
+        "angle": ("angulo", "type", "tipo", "hook", "approach", "style", "category"),
+    }
 
 
 class Chapter(Lenient):
     scene: int
     title: str
+    ALIASES: ClassVar[dict[str, tuple[str, ...]]] = {
+        "scene": ("cena", "scene_number", "position", "index"),
+        "title": ("titulo", "text", "texto", "name", "label", "chapter"),
+    }
 
 
 class VideoMetadata(Lenient):
@@ -336,6 +358,14 @@ class VideoMetadata(Lenient):
     primary_keywords: list[str] = []
     secondary_keywords: list[str] = []
     policy_notes: list[str] = []
+    ALIASES: ClassVar[dict[str, tuple[str, ...]]] = {
+        "titles": ("titulos", "title_options", "title_suggestions", "titles_options"),
+        "description": ("descricao", "video_description", "desc"),
+        "chapters": ("capitulos", "timestamps"),
+        "primary_keywords": ("keywords", "palavras_chave", "main_keywords"),
+        "secondary_keywords": ("palavras_chave_secundarias", "related_keywords"),
+        "policy_notes": ("notes", "notas", "policy"),
+    }
 
 
 class Learning(Lenient):

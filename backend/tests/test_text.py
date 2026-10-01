@@ -101,3 +101,22 @@ def test_schemas_tolerate_model_variations():
         {"start": 3, "prompt": "sem fim"},  # sem 'end': descartada
     ]})
     assert len(plan.scenes) == 1 and plan.scenes[0].end == 2 and plan.scenes[0].asset_type == "IMAGE_MOTION"
+
+
+def test_metadata_tolerates_translated_keys():
+    """Caso real: 'titles.0.title Field required' — o Gemini mandou o título com outro nome de campo."""
+    from app.pipeline.schemas import VideoMetadata
+
+    m = VideoMetadata.model_validate({
+        "titles": [{"título": "Como dois trilhos uniram os EUA", "angle": "pergunta"},
+                   {"text": "O prego de ouro de 1869", "ângulo": "curiosidade"},
+                   {"angle": "mistério", "opção": "A corrida que mudou a América"},
+                   {"angle": "sem texto"}],
+        "descrição": "Uma história de trilhos.", "capítulos": [{"cena": 1, "título": "Abertura"}],
+        "tags": "trens, estados unidos, história",
+    })
+    assert [t.title for t in m.titles] == ["Como dois trilhos uniram os EUA", "O prego de ouro de 1869",
+                                           "A corrida que mudou a América"]
+    assert m.titles[1].angle == "curiosidade" and m.description == "Uma história de trilhos."
+    assert m.chapters[0].scene == 1 and m.chapters[0].title == "Abertura"
+    assert m.tags == ["trens", "estados unidos", "história"]
