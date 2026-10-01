@@ -1,0 +1,22 @@
+# segredos e dados locais
+.env
+backend/.env
+backend/data/
+
+# ambientes e builds
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# editores / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

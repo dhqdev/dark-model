@@ -1,0 +1,80 @@
+# Dark Model — Stack para o Portainer (Docker standalone)
+# Portainer → Stacks → Add stack → Web editor → cole este arquivo.
+#
+# Antes de publicar:
+#   1. Registries → Add registry → Custom registry (só se o pacote no GHCR for privado)
+#        URL: ghcr.io · usuário: seu usuário do GitHub · senha: token (classic) com escopo read:packages
+#   2. Em "Environment variables" da stack defina pelo menos:
+#        APP_USERNAME, APP_PASSWORD, OPENROUTER_API_KEY, POSTGRES_PASSWORD
+#      e de preferência APP_SECRET_KEY (gere com: openssl rand -base64 48 — e guarde).
+#
+# Atualizar: na stack, "Pull and redeploy" (ou o webhook — ver README).
+# Arquivos gerados (imagens, vídeos, áudios, ZIPs) ficam no volume dark_model_data; o banco em dark_model_db.
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dark
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: darkmodel
+    volumes:
+      - dark_model_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dark -d darkmodel"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  api:
+    image: ghcr.io/dhqdev/dark-model:${TAG:-latest}
+    command: ["api"]
+    restart: unless-stopped
+    environment: &env
+      APP_USERNAME: ${APP_USERNAME}
+      APP_PASSWORD: ${APP_PASSWORD}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_MANAGEMENT_KEY: ${OPENROUTER_MANAGEMENT_KEY:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      # true somente com HTTPS na frente (proxy com TLS). Acessando por http://IP:porta deixe false.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      POSTGRES_HOST: db
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      WORKER_LANES: ${WORKER_LANES:-llm=2,image=4,tts=3,video=2,cpu=1}
+      TZ: ${TZ:-America/Sao_Paulo}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - dark_model_data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    image: ghcr.io/dhqdev/dark-model:${TAG:-latest}
+    command: ["worker"]
+    restart: unless-stopped
+    environment: *env
+    volumes:
+      - dark_model_data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    stop_grace_period: 60s
+    logging: *logging
+
+volumes:
+  dark_model_db:
+  dark_model_data:

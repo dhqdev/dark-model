@@ -1,0 +1,118 @@
+version: "3.7"
+
+# Dark Model — Docker Swarm + Traefik (Portainer → Stacks → Add stack → Web editor)
+# Mesmo padrão das outras stacks da VPS (n8n, bot-trader): rede externa "network_public",
+# entrypoint "websecure" e certresolver "letsencryptresolver".
+#
+# Servidor: Oracle Cloud Always Free (Ampere A1, ARM64) — a imagem é publicada para
+# linux/arm64 e linux/amd64; o Docker escolhe a certa sozinho.
+#
+# Antes do deploy:
+#   1. DNS: dark.tekvosoft.com (registro A) → IP público da VPS.
+#   2. Portainer → Registries → ghcr.io com seu usuário do GitHub + token (classic) read:packages
+#      (necessário enquanto o pacote ghcr.io/dhqdev/dark-model for privado).
+#   3. Na stack, em "Environment variables", defina:
+#        APP_USERNAME, APP_PASSWORD, OPENROUTER_API_KEY, APP_SECRET_KEY, POSTGRES_PASSWORD
+#      (APP_SECRET_KEY: gere com `openssl rand -base64 48` e GUARDE — trocar desloga a sessão).
+#   4. Banco: usa o PostgreSQL que já existe na VPS (serviço postgres_postgres, o mesmo do n8n).
+#      O banco "darkmodel" é criado sozinho no primeiro start (o usuário precisa poder criar bancos;
+#      o usuário "postgres" pode). Não precisa de Redis: a fila de geração usa o próprio PostgreSQL.
+#
+# A API e o worker ficam no nó manager porque compartilham o volume de arquivos (dark_model_data).
+# Backup: volume dark_model_data (imagens, vídeos, áudios, ZIPs) + banco darkmodel do Postgres.
+
+services:
+  dark_model:
+    image: ghcr.io/dhqdev/dark-model:latest
+    command: ["api"]
+    environment:
+      # --- Acesso (login único) ---
+      - APP_USERNAME=${APP_USERNAME}
+      - APP_PASSWORD=${APP_PASSWORD}
+      - APP_SECRET_KEY=${APP_SECRET_KEY}
+      # --- OpenRouter ---
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      # opcional: chave de gerenciamento para mostrar o saldo da conta
+      - OPENROUTER_MANAGEMENT_KEY=${OPENROUTER_MANAGEMENT_KEY:-}
+      # --- Banco (PostgreSQL existente) ---
+      - POSTGRES_HOST=postgres_postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=darkmodel
+      # --- Endereço público (HTTPS pelo Traefik) ---
+      - APP_PUBLIC_URL=https://dark.tekvosoft.com
+      - COOKIE_SECURE=true
+      - TZ=America/Sao_Paulo
+    volumes:
+      - dark_model_data:/data
+    networks:
+      - network_public
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 10s
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        # --- Configuração do Traefik ---
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
+        - "traefik.http.routers.darkmodel.rule=Host(`dark.tekvosoft.com`)"
+        - "traefik.http.routers.darkmodel.entrypoints=websecure"
+        - "traefik.http.routers.darkmodel.service=darkmodel-service"
+        - "traefik.http.routers.darkmodel.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.darkmodel-service.loadbalancer.server.port=8000"
+
+  dark_model_worker:
+    image: ghcr.io/dhqdev/dark-model:latest
+    command: ["worker"]
+    environment:
+      - APP_USERNAME=${APP_USERNAME}
+      - APP_PASSWORD=${APP_PASSWORD}
+      - APP_SECRET_KEY=${APP_SECRET_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MANAGEMENT_KEY=${OPENROUTER_MANAGEMENT_KEY:-}
+      - POSTGRES_HOST=postgres_postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=darkmodel
+      - APP_PUBLIC_URL=https://dark.tekvosoft.com
+      - TZ=America/Sao_Paulo
+      # Ampere A1 com 4 OCPUs: 2 renderizações ffmpeg em paralelo (cpu=2) é um bom equilíbrio
+      - WORKER_LANES=llm=2,image=4,tts=3,video=2,cpu=2
+    volumes:
+      - dark_model_data:/data
+    networks:
+      - network_public
+    stop_grace_period: 60s
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 10s
+      placement:
+        constraints:
+          - node.role == manager
+
+volumes:
+  dark_model_data:
+    name: dark_model_data
+
+networks:
+  network_public:
+    external: true
+    name: network_public

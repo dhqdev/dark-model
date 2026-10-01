@@ -1,0 +1,56 @@
+# Execução local / servidor sem Portainer:
+#   cp .env.example .env   (preencha)
+#   docker compose up -d --build        → http://localhost:8000
+#
+# Serviços: db (PostgreSQL) · api (API + interface) · worker (fila de geração).
+# A mesma imagem roda a API e o worker; os arquivos gerados ficam no volume studio-data.
+
+x-app: &app
+  build: .
+  image: dark-model:local
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    POSTGRES_HOST: db
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+  volumes:
+    - studio-data:/data
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dark
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: darkmodel
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dark -d darkmodel"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    <<: *app
+    command: ["api"]
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+
+  worker:
+    <<: *app
+    command: ["worker"]
+    stop_grace_period: 60s
+
+volumes:
+  db-data:
+  studio-data:

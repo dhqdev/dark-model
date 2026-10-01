@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+frontend/dist
+frontend/e2e
+backend/data
+backend/tests
+backend/scripts
+deploy
+*.md
