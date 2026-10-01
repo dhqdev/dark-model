@@ -14,6 +14,7 @@ from ..providers import registry
 from ..storage import get_storage
 from . import prompts
 from .common import StageError, clip_hash, load_scene, model_for, new_asset_path, save_asset, visual_hash
+from .estimate import production_plan
 
 IMAGE_W, IMAGE_H = 1920, 1080
 
@@ -53,6 +54,8 @@ def enqueue_project_visuals(db: Session, project: Project, *, scope: str = "miss
         scenes = [s for s in scenes if not scene_visual_state(db, s, project.channel.visual_style)["ready"]]
     if not scenes:
         return None
+    # refaz o plano com as cenas reais: o modelo de imagem escolhido vale para todas
+    production_plan(db, project, refresh=True)
     group = queue.create_group(db, "visuals.batch", label=f"Visuais de {len(scenes)} cenas", stage="visuals",
                                project_id=project.id, channel_id=project.channel_id)
     for s in scenes:
@@ -70,8 +73,9 @@ def generate_image(ctx: JobContext) -> dict:
         if not scene.prompt.strip():
             raise StageError(f"A cena {scene.position} está sem prompt visual.")
         tier = project.quality
-        model = model_for(db, "image", tier)
-        resolution = tiers.tier_params(db, tier).get("image_resolution")
+        plan = production_plan(db, project)
+        model = plan.get("image_model") or model_for(db, "image", tier)
+        resolution = plan.get("image_resolution") or tiers.tier_params(db, tier).get("image_resolution")
         prompt = prompts.image_prompt(scene.prompt, channel.visual_style)
         source_hash = visual_hash(scene, channel.visual_style)
         position = scene.position

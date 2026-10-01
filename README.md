@@ -107,6 +107,21 @@ mínima por cena, % de vídeo, quantidade de thumbnails e esforço de raciocíni
 e do **vídeo IA**. Texto e narração custam centavos. Para baixar o total: aumente os *segundos por
 cena* do canal (12–15 s), deixe o vídeo IA em 0% e escolha um modelo de imagem barato.
 
+### Teto por vídeo (em reais)
+Cada nível tem um **teto por vídeo** (padrão: Economy sem teto, Balanced **R$ 20**, Premium
+**R$ 50**; 0 = sem teto). Se o plano padrão passar do teto, o sistema ajusta o plano daquele vídeo,
+nesta ordem, até caber: **1)** reduz/corta o vídeo IA → **2)** alonga as cenas até 12 s (menos
+imagens) → **3)** usa o modelo de imagem do nível abaixo (só se você não fixou um) → **4)** cenas
+de até 20 s. A estimativa mostra o total em R$ e US$, o teto (✓/✕) e o que foi ajustado.
+
+O plano escolhido é o que a produção usa: a divisão em cenas segue a duração planejada (e junta
+cenas se a IA criar cenas demais) e todas as imagens do projeto usam o mesmo modelo. O teto vale
+para o plano; refazer cenas gasta além dele (para um limite rígido use *Limite por projeto*).
+
+A OpenRouter cobra em dólar; a conversão usa a **cotação do dia** (AwesomeAPI, com Frankfurter de
+reserva, cache de 12 h). Sem acesso à internet, vale a última cotação obtida ou `USD_BRL`
+(padrão 5,50). Em Configurações dá para fixar uma cotação.
+
 ### Estimativa antes de gerar (os três níveis lado a lado)
 Cada linha mostra a origem do número:
 

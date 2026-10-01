@@ -68,3 +68,36 @@ def test_split_for_tts_respects_limit_without_losing_text():
     parts = split_for_tts(script, 500)
     assert len(parts) > 1 and all(len(p) <= 500 for p in parts)
     assert " ".join(parts) == script
+
+
+def test_schemas_tolerate_model_variations():
+    """Caso real: o Gemini devolveu a estrutura do roteiro sem 'title' (12 erros de validação)."""
+    from app.pipeline.schemas import ScenePlan, ScriptAnalysis
+
+    a = ScriptAnalysis.model_validate({
+        "summary": "Resumo", "verdict": "Needs revision",
+        "scores": {"hook": "8/10", "Structure": 7.6, "retention potential": "9", "channel fit": None},
+        "structure": [
+            {"starts_with": "Dez de maio de 1869. Um pedaço de deserto no território de Utah",
+             "evaluation": "Abre com as perguntas centrais."},
+            {"name": "A construção", "starts_with": "Para chegar até aqui"},
+        ],
+        "issues": [{"type": "Pacing", "severity": "HIGH", "excerpt": "x"}, "texto solto"],
+        "repetition_notes": "uma nota só",
+        "improvements": [{"text": "encurtar a abertura"}],
+    })
+    assert a.verdict == "needs_revision"
+    assert a.scores.hook == 8 and a.scores.structure == 8 and a.scores.retention == 9
+    assert a.scores.channel_fit is None and a.scores.coherence is None  # nota ausente não é inventada
+    assert a.structure[0].title == "Dez de maio de 1869. Um…"
+    assert a.structure[0].assessment == "Abre com as perguntas centrais."
+    assert a.structure[1].title == "A construção"
+    assert len(a.issues) == 1 and a.issues[0].type == "pacing" and a.issues[0].severity == "high"
+    assert a.repetition_notes == ["uma nota só"] and a.improvements == ["encurtar a abertura"]
+    assert a.ending_assessment == "" and a.policy_risks == []
+
+    plan = ScenePlan.model_validate({"scenes": [
+        {"from": 0, "to": 2, "image_prompt": "wide shot", "asset_type": "image + motion"},
+        {"start": 3, "prompt": "sem fim"},  # sem 'end': descartada
+    ]})
+    assert len(plan.scenes) == 1 and plan.scenes[0].end == 2 and plan.scenes[0].asset_type == "IMAGE_MOTION"

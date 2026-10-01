@@ -176,6 +176,8 @@ class Project(Base):
     scenes_planned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     scenes_script_hash: Mapped[str] = mapped_column(String(64), default="")
     target_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # plano de produção dentro do teto do nível (modelo de imagem, duração das cenas, % de vídeo)
+    plan: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     metadata_suggestions: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     selected_title: Mapped[str] = mapped_column(String(300), default="")

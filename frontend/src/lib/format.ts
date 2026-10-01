@@ -5,6 +5,11 @@ export function usd(value: number | null | undefined, digits?: number): string {
   return `$${value.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}`;
 }
 
+export function brl(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function num(value: number | null | undefined, digits = 0): string {
   if (value === null || value === undefined) return "—";
   return value.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });

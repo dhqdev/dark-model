@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .. import catalog, pricing, serialize, tiers, usage as usage_ledger
+from .. import catalog, fx, pricing, serialize, tiers, usage as usage_ledger
 from ..config import get_settings
 from ..deps import get_db, require_user
 from ..providers.base import ProviderError
@@ -23,6 +23,11 @@ class TiersIn(BaseModel):
 class BudgetIn(BaseModel):
     daily_limit_usd: float | None = Field(None, ge=0)
     project_limit_usd: float | None = Field(None, ge=0)
+
+
+class FxIn(BaseModel):
+    # vazio/0 = cotação automática do dia
+    manual_rate: float | None = Field(None, ge=0, le=50)
 
 
 def _catalog_status() -> dict:
@@ -45,6 +50,7 @@ def get_all(db: Session = Depends(get_db)) -> dict:
         "resolved": tiers.resolve_all(db),
         "operations": tiers.OPERATION_LABELS,
         "budget": usage_ledger.get_budget(db),
+        "fx": fx.get_rate(db),
         "providers": {"openrouter": {"configured": s.openrouter_configured, "base_url": s.openrouter_base_url,
                                      "management_key": bool(s.openrouter_management_key)}},
         "catalog": _catalog_status(),
@@ -70,6 +76,13 @@ def put_budget(body: BudgetIn, db: Session = Depends(get_db)) -> dict:
     value = usage_ledger.save_budget(db, body.daily_limit_usd, body.project_limit_usd)
     db.commit()
     return value
+
+
+@router.put("/settings/fx")
+def put_fx(body: FxIn, db: Session = Depends(get_db)) -> dict:
+    fx.save_manual(db, body.manual_rate)
+    db.commit()
+    return fx.get_rate(db)
 
 
 def _per_million(value: Any) -> float | None:

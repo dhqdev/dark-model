@@ -77,8 +77,13 @@ def call_json(
     provider, model_id = registry.split_ref(model)
     llm = registry.llm(provider)
     json_schema = strict_schema(schema)
+    # o schema também vai no texto: nem todo provedor aplica o 'structured outputs' (modo JSON simples)
+    schema_text = json.dumps(json_schema, ensure_ascii=False, separators=(",", ":"))
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": system},
+        {"role": "system", "content": (
+            f"{system}\n\nAnswer with ONE JSON object that follows this JSON Schema exactly — same field names, "
+            f"every field present:\n{schema_text}"
+        )},
         {"role": "user", "content": user},
     ]
     session_id = f"dm-project-{ctx.project_id}" if ctx.project_id else f"dm-channel-{ctx.channel_id}"

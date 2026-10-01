@@ -142,7 +142,7 @@ def get_project(project_id: int, db: Session = Depends(get_db)) -> dict:
     jobs = [serialize.job(j) for j in queue.active_for(db, project_id=p.id)]
     return {
         **serialize.project_summary(p, cost["cost"], len(scenes)),
-        "script": p.script, "notes": p.notes, "target_minutes": p.target_minutes, "analysis": p.analysis,
+        "script": p.script, "notes": p.notes, "target_minutes": p.target_minutes, "analysis": p.analysis, "plan": p.plan,
         "analysis_at": serialize.iso(p.analysis_at), "metadata_suggestions": p.metadata_suggestions,
         "description": p.description, "tags": p.tags or [],
         "channel": serialize.channel(channel),

@@ -4,7 +4,7 @@ import { PlugZap, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Btn, ErrorBox, Field, Loading, Modal, Notice, PageHeader, Panel, useToast } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
-import { dateTime, QUALITY_LABEL, usd } from "../lib/format";
+import { brl, dateTime, QUALITY_LABEL, usd } from "../lib/format";
 import type { Budget, CatalogModel, Quality, SettingsData, SystemStatus, TierConfig } from "../lib/types";
 
 const TIERS: Quality[] = ["ECONOMY", "BALANCED", "PREMIUM"];
@@ -79,10 +79,12 @@ export function Settings() {
   const [tiers, setTiers] = useState<Record<Quality, TierConfig> | null>(null);
   const [budget, setBudget] = useState<Budget>({ daily_limit_usd: null, project_limit_usd: null });
   const [picker, setPicker] = useState<{ op: Op; tier: Quality } | null>(null);
+  const [fxManual, setFxManual] = useState("");
   useEffect(() => {
     if (data) {
       setTiers(data.tiers);
       setBudget(data.budget);
+      setFxManual(data.fx.source === "manual" ? String(data.fx.rate) : "");
     }
   }, [data]);
 
@@ -100,6 +102,15 @@ export function Settings() {
     onSuccess: () => {
       toast("Limites de gasto salvos");
       void qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (e) => toast(errorMessage(e), "err"),
+  });
+  const saveFx = useMutation({
+    mutationFn: () => api.put("/settings/fx", { manual_rate: fxManual ? Number(fxManual.replace(",", ".")) : null }),
+    onSuccess: () => {
+      toast(fxManual ? "Cotação fixada" : "Cotação automática (do dia)");
+      void qc.invalidateQueries({ queryKey: ["settings"] });
+      void qc.invalidateQueries({ queryKey: ["estimate"] });
     },
     onError: (e) => toast(errorMessage(e), "err"),
   });
@@ -141,8 +152,9 @@ export function Settings() {
             <p className="mb-4 text-[12.5px] text-muted">
               Sem um modelo fixado, o sistema escolhe no catálogo real da OpenRouter: no Economy, as imagens usam o modelo com o menor preço real por imagem; no
               Balanced, a opção mais barata da família preferida para imagem, thumbnail e vídeo; texto e narração usam a versão mais nova (ex.: Claude Sonnet no
-              Balanced). O maior custo de um vídeo são as imagens: cenas mais longas e menos vídeo IA reduzem bastante o total. Clique num modelo para fixar outro
-              (a lista mostra o preço).
+              Balanced). O <strong className="font-medium text-paper">teto por vídeo</strong> garante o preço máximo: se o plano passar, o sistema corta o vídeo
+              IA, alonga as cenas (menos imagens) e, se ainda precisar, usa o modelo de imagem do nível abaixo — a estimativa do projeto mostra o que foi ajustado.
+              Clique num modelo para fixar outro (a lista mostra o preço); um modelo de imagem fixado por você não é trocado.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] border-collapse text-[13px]">
@@ -157,6 +169,18 @@ export function Settings() {
                   </tr>
                 </thead>
                 <tbody>
+                  <tr className="border-b border-line bg-amber/[0.04]">
+                    <td className="py-2.5 pr-3 text-paper" title="O plano de cada vídeo é ajustado para caber: primeiro corta vídeo IA, depois alonga as cenas, por fim usa o modelo de imagem do nível abaixo. 0 = sem teto.">
+                      Teto por vídeo (R$)
+                      <span className="block text-[11px] text-dim">0 = sem teto</span>
+                    </td>
+                    {TIERS.map((t) => (
+                      <td key={t} className="py-2 pl-3">
+                        <input className="input tnum py-1.5" type="number" min={0} step={1} value={tiers[t].cap_brl ?? 0} onChange={(e) => setParam(t, "cap_brl", Number(e.target.value))} />
+                        <span className="mt-1 block font-mono text-[11px] text-dim">{tiers[t].cap_brl ? `≈ ${usd(tiers[t].cap_brl / data.fx.rate, 2)}` : "sem teto"}</span>
+                      </td>
+                    ))}
+                  </tr>
                   {OPS.map((op) => (
                     <tr key={op} className="border-b border-line align-top">
                       <td className="py-2.5 pr-3 text-muted">{data.operations[op]}</td>
@@ -262,6 +286,21 @@ export function Settings() {
               <Btn variant="primary" loading={saveBudget.isPending} onClick={() => saveBudget.mutate()}>
                 Salvar limites
               </Btn>
+            </div>
+            <div className="mt-6 border-t border-line pt-4">
+              <div className="kicker mb-2">Cotação do dólar</div>
+              <p className="mb-3 text-[12.5px] text-muted">
+                A OpenRouter cobra em dólar; os tetos são em reais. Agora: <span className="tnum font-mono text-paper">US$ 1 = {brl(data.fx.rate)}</span> · {data.fx.note}
+                {data.fx.at ? ` (${dateTime(data.fx.at)})` : ""}. Deixe vazio para usar a cotação do dia.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+                <Field label="Cotação fixa (R$ por US$)">
+                  <input className="input tnum" inputMode="decimal" placeholder="automática" value={fxManual} onChange={(e) => setFxManual(e.target.value)} />
+                </Field>
+                <Btn loading={saveFx.isPending} onClick={() => saveFx.mutate()}>
+                  Salvar cotação
+                </Btn>
+              </div>
             </div>
           </Panel>
         </div>

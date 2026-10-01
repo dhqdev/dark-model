@@ -266,6 +266,8 @@ class OpenRouterLLM:
                     "type": "json_schema",
                     "json_schema": {"name": schema_name, "strict": True, "schema": json_schema},
                 }
+                # só provedores que aplicam o schema de fato (senão o pedido é ignorado em silêncio)
+                payload["provider"] = {"require_parameters": True}
             elif not params or "response_format" in params:
                 payload["response_format"] = {"type": "json_object"}
         if reasoning_effort and "reasoning" in params:
@@ -276,9 +278,10 @@ class OpenRouterLLM:
             data = self.client.post_json("/chat/completions", payload, timeout=600)
         except ProviderError as exc:
             fmt = payload.get("response_format", {}).get("type")
-            if exc.status == 400 and fmt == "json_schema":
-                # alguns provedores rejeitam o schema estrito: tenta modo JSON simples
+            if exc.status in (400, 404) and fmt == "json_schema":
+                # schema estrito rejeitado ou nenhum provedor com suporte: tenta modo JSON simples
                 payload["response_format"] = {"type": "json_object"}
+                payload.pop("provider", None)
                 data = self.client.post_json("/chat/completions", payload, timeout=600)
             else:
                 raise

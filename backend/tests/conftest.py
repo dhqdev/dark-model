@@ -29,6 +29,8 @@ def fake(tmp_path, monkeypatch) -> FakeOpenRouter:
     monkeypatch.setenv("EMBEDDED_WORKER", "false")
     monkeypatch.setenv("MOTION_SIZE", "320x180")
     monkeypatch.setenv("MOTION_FPS", "10")
+    monkeypatch.setenv("FX_AUTO", "false")  # sem cotação ao vivo nos testes
+    monkeypatch.setenv("USD_BRL", "5.0")
     monkeypatch.delenv("OPENROUTER_MANAGEMENT_KEY", raising=False)
     get_settings.cache_clear()
     engine = init_engine()

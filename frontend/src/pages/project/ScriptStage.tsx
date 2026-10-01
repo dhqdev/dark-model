@@ -123,7 +123,9 @@ export function ScriptStage({ project }: { project: ProjectDetail }) {
               <span className="text-[13px] text-muted">{ai.summary}</span>
             </div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3">
-              {Object.entries(ai.scores).map(([k, v]) => (
+              {Object.entries(ai.scores)
+                .filter((e): e is [string, number] => typeof e[1] === "number")
+                .map(([k, v]) => (
                 <div key={k}>
                   <div className="mb-1 flex justify-between font-mono text-[10.5px] tracking-[0.12em] uppercase">
                     <span className="text-muted">{SCORE_LABEL[k] ?? k}</span>

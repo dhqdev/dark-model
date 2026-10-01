@@ -30,17 +30,18 @@ CATALOG_KIND = {"text": "text", "image": "image", "thumbnail": "image", "tts": "
 
 TIER_PARAMS: dict[str, dict[str, Any]] = {
     # min_scene_seconds: cenas mais longas = menos imagens (a imagem é o maior custo do vídeo)
+    # cap_brl: teto por vídeo em reais (0 = sem teto); o plano é ajustado para caber
     Quality.ECONOMY: {
         "image_resolution": "1K", "video_resolution": "480p", "thumb_concepts": 2, "thumb_variations": 1,
-        "video_share": 0.0, "reasoning": "low", "min_scene_seconds": 12,
+        "video_share": 0.0, "reasoning": "low", "min_scene_seconds": 12, "cap_brl": 0,
     },
     Quality.BALANCED: {
         "image_resolution": "1K", "video_resolution": "720p", "thumb_concepts": 3, "thumb_variations": 2,
-        "video_share": 0.03, "reasoning": None, "min_scene_seconds": 9,
+        "video_share": 0.03, "reasoning": None, "min_scene_seconds": 9, "cap_brl": 20,
     },
     Quality.PREMIUM: {
         "image_resolution": "2K", "video_resolution": "1080p", "thumb_concepts": 4, "thumb_variations": 2,
-        "video_share": 0.10, "reasoning": "medium", "min_scene_seconds": 0,
+        "video_share": 0.10, "reasoning": "medium", "min_scene_seconds": 0, "cap_brl": 50,
     },
 }
 

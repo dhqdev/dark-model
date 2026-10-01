@@ -4,7 +4,7 @@ import { Film, Image as ImageIcon, Layers, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Badge, Btn, Empty, Led, Modal, Panel, Segmented, useToast } from "../../components/ui";
 import { api, errorMessage } from "../../lib/api";
-import { ASSET_TYPE_LABEL, dateTime, MOTION_LABEL, secs, usd } from "../../lib/format";
+import { ASSET_TYPE_LABEL, brl, dateTime, MOTION_LABEL, secs, usd } from "../../lib/format";
 import type { Asset, ProjectDetail, Scene } from "../../lib/types";
 import { useInvalidateProject, useProjectAction } from "./shared";
 
@@ -75,6 +75,22 @@ export function VisualsStage({ project }: { project: ProjectDetail }) {
         Imagem + Motion: imagem gerada por IA animada localmente (zoom/pan, sem custo extra). Vídeo: clipe gerado por IA a partir da imagem da cena (quando o modelo aceita
         quadro inicial). Passe o mouse sobre um clipe para assistir.
       </div>
+      {project.plan && project.plan.tier === project.quality && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 border border-line bg-coal px-3 py-2 font-mono text-[11.5px] text-muted">
+          <span className="kicker">Plano do nível</span>
+          <span>
+            imagem <span className="text-paper">{project.plan.image_model ?? "—"}</span> · {project.plan.image_resolution}
+          </span>
+          {project.plan.cap_brl ? (
+            <span className={project.plan.fits === false ? "text-signal" : "text-ok"}>
+              teto {brl(project.plan.cap_brl)} · estimado {brl(project.plan.total_brl)}
+            </span>
+          ) : (
+            <span>sem teto</span>
+          )}
+          {project.plan.adjustments.length > 0 && <span className="text-dim">ajustes: {project.plan.adjustments.join(" · ")}</span>}
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {shown.map((s) => (
           <SceneCard key={s.id} scene={s} project={project} busy={busyScenes.has(s.id)} onVersions={() => setVersions(s)} />

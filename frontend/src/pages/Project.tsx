@@ -7,7 +7,7 @@ import { useEstimate } from "../components/estimate";
 import { JobLine } from "../components/jobs";
 import { Badge, ErrorBox, Loading, Modal, Btn, Panel, useToast } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
-import { PROJECT_STATUS, QUALITY_LABEL, timecode, usd } from "../lib/format";
+import { PROJECT_STATUS, QUALITY_LABEL, brl, timecode, usd } from "../lib/format";
 import type { ProjectDetail, Quality } from "../lib/types";
 import { CostsStage } from "./project/CostsStage";
 import { ExportStage } from "./project/ExportStage";
@@ -123,6 +123,9 @@ export function Project() {
             <div className="panel px-4 py-2.5">
               <div className="kicker">Custo real</div>
               <div className="tnum mt-1 font-mono text-[20px] text-amber">{usd(project.costs.cost)}</div>
+              {estimate.data && project.costs.cost > 0 && (
+                <div className="tnum font-mono text-[11px] text-dim">≈ {brl(project.costs.cost * estimate.data.fx.rate)}</div>
+              )}
             </div>
             <div className="panel flex">
               {(["ECONOMY", "BALANCED", "PREMIUM"] as Quality[]).map((q) => (
@@ -130,11 +133,18 @@ export function Project() {
                   key={q}
                   onClick={() => q !== project.quality && setQuality.mutate(q)}
                   className={clsx("border-r border-line px-4 py-2.5 text-left last:border-r-0 transition-colors", q === project.quality ? "bg-amber text-ink" : "hover:bg-raised")}
-                  title="Estimativa total do projeto neste nível (preços reais da OpenRouter)"
+                  title={
+                    estimate.data
+                      ? `Estimativa do projeto neste nível: ${usd(estimate.data.tiers[q].total, 2)}${estimate.data.tiers[q].cap_brl ? ` · teto ${brl(estimate.data.tiers[q].cap_brl)}` : ""}`
+                      : "Estimativa total do projeto neste nível"
+                  }
                 >
                   <div className={clsx("font-mono text-[10px] tracking-[0.16em] uppercase", q === project.quality ? "text-ink" : "text-dim")}>{QUALITY_LABEL[q]}</div>
                   <div className={clsx("tnum mt-1 font-mono text-[15px]", q === project.quality ? "text-ink" : "text-paper")}>
-                    {estimate.data ? usd(estimate.data.tiers[q].total, 2) : "…"}
+                    {estimate.data ? brl(estimate.data.tiers[q].total_brl) : "…"}
+                  </div>
+                  <div className={clsx("tnum font-mono text-[10.5px]", q === project.quality ? "text-ink/70" : "text-dim")}>
+                    {estimate.data ? usd(estimate.data.tiers[q].total, 2) : ""}
                   </div>
                 </button>
               ))}

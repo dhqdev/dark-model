@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # Quanto tempo sem sinal de vida até uma tarefa "rodando" ser considerada travada.
     job_stale_seconds: int = 300
     catalog_ttl_minutes: int = 360
+    # --- moeda: custos e tetos por vídeo em reais ---
+    # Cotação do dólar usada quando a cotação ao vivo não está disponível (ou sempre, com FX_AUTO=false).
+    usd_brl: float = 5.5
+    fx_auto: bool = True
     # Clipes de movimento (IMAGE + MOTION) renderizados localmente
     motion_size: str = "1920x1080"
     motion_fps: int = 30

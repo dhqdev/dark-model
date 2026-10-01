@@ -144,7 +144,7 @@ export interface Analysis {
   ai: {
     summary: string;
     verdict: "approved" | "needs_revision" | "high_risk";
-    scores: Record<string, number>;
+    scores: Record<string, number | null>;
     hook_assessment: string;
     structure: { title: string; starts_with: string; assessment: string }[];
     ending_assessment: string;
@@ -234,6 +234,7 @@ export interface ProjectDetail extends ProjectSummary {
   notes: string;
   target_minutes: number | null;
   analysis: Analysis | null;
+  plan: ProductionPlan | null;
   analysis_at: string | null;
   metadata_suggestions: MetadataSuggestions | null;
   description: string;
@@ -248,6 +249,7 @@ export interface ProjectDetail extends ProjectSummary {
 }
 
 export interface EstimateLine {
+  key: string;
   stage: string;
   label: string;
   model: string | null;
@@ -271,9 +273,46 @@ export interface Estimate {
     scenes_planned: boolean;
     language: string;
   };
-  tiers: Record<Quality, { total: number; complete: boolean; missing: string[]; lines: EstimateLine[]; models: Record<string, string | null> }>;
+  tiers: Record<Quality, TierEstimate>;
   current: Quality;
+  fx: Fx;
   catalog_at: string;
+}
+
+export interface ProductionPlan {
+  tier: Quality;
+  scene_seconds: number | null;
+  video_share: number | null;
+  scenes: number;
+  image_model: string | null;
+  image_resolution: string | null;
+  cap_brl: number | null;
+  total_usd: number;
+  total_brl: number;
+  fits: boolean | null;
+  adjustments: string[];
+}
+
+export interface TierEstimate {
+  scenes: number;
+  total: number;
+  total_brl: number;
+  complete: boolean;
+  missing: string[];
+  lines: EstimateLine[];
+  models: Record<string, string | null>;
+  cap_brl: number | null;
+  cap_usd: number | null;
+  fits: boolean | null;
+  adjustments: string[];
+  plan: ProductionPlan;
+}
+
+export interface Fx {
+  rate: number;
+  source: "manual" | "live" | "last" | "default";
+  at: string | null;
+  note: string;
 }
 
 export interface Skill {
@@ -346,6 +385,7 @@ export interface TierConfig {
   video_share: number;
   reasoning: string | null;
   min_scene_seconds: number;
+  cap_brl: number;
 }
 
 export interface SettingsData {
@@ -353,6 +393,7 @@ export interface SettingsData {
   resolved: Record<Quality, Record<string, Resolved>>;
   operations: Record<string, string>;
   budget: Budget;
+  fx: Fx;
   providers: { openrouter: { configured: boolean; base_url: string; management_key: boolean } };
   catalog: Record<string, { count: number; fetched_at: string | null }>;
   app: { env: string; public_url: string; embedded_worker: boolean; lanes: Record<string, number>; catalog_ttl_minutes: number };
