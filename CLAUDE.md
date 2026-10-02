@@ -39,6 +39,7 @@ backend/app/
     visuals.py     visual.image → visual.motion | visual.video
     narration.py   narration.scene (→ visual.motion ajustado ao áudio) / narration.merge
     render.py      render.final (vídeo final; dispara sozinho via GROUP_HOOKS)
+    autopilot.py   piloto automático: estado em Project.autopilot, avança a cada tarefa concluída (DONE_HOOKS)
     thumbnail.py   thumbnail.concepts → thumbnail.image      metadata.py  metadata.generate
     export.py      export.zip (→ skill.learn)                learning.py  skill.draft/learn/consolidate
     estimate.py    estimativa de custo + Planner do teto em R$ (plano salvo em Project.plan)
@@ -53,7 +54,7 @@ backend/app/
   montage.py       montagem do vídeo final (xfade, drawtext máquina de escrever, mixagem)
   media.py         ffmpeg/ffprobe, movimento Ken Burns, MP3     sfx.py  efeitos sonoros sintetizados
   fx.py            cotação USD→BRL     storage.py  arquivos em DATA_DIR/storage     security.py  login
-backend/alembic/versions/   0001 inicial · 0002 Project.plan · 0003 transition/sfx/overlay_text
+backend/alembic/versions/   0001 inicial · 0002 Project.plan · 0003 transition/sfx/overlay_text · 0004 Project.autopilot
 backend/tests/              pytest + fake_openrouter.py (simulador da API inteira)
 frontend/src/               React 19 + Vite + Tailwind 4 + TanStack Query + react-router
   pages/Project.tsx + pages/project/*Stage.tsx   abas do projeto (Roteiro … Arquivos)
@@ -69,6 +70,8 @@ deploy/                     stacks Portainer     Dockerfile  frontend build + py
   `FREE_KINDS` não passam pelo limite de gasto. Tipo novo ⇒ registre em `LANES` e `STAGES`.
 - **Encadeamento:** handlers chamam `ctx.follow_up(...)` (ex.: imagem → movimento). Quando um grupo
   termina com sucesso rodam os `queue.GROUP_HOOKS` (ex.: `render._auto_render` monta o vídeo final).
+  Quando qualquer tarefa de nível superior (avulsa ou grupo) termina, rodam os `queue.DONE_HOOKS`
+  (ex.: `autopilot._on_done` enfileira a próxima etapa do piloto automático).
 - **"Desatualizado" por hash:** cada Asset guarda `source_hash` das entradas (`visual_hash`,
   `clip_hash`, `audio_hash` em `pipeline/common.py`). Mudar prompt/voz/tipo invalida só o que
   depende disso; `*_state()` diz o que está pronto e os enqueue agendam só o que falta.
@@ -78,7 +81,10 @@ deploy/                     stacks Portainer     Dockerfile  frontend build + py
   OpenRouter. Estimativas nunca inventam número (sem dado → "—").
 - **Plano dentro do teto:** `estimate.production_plan()` escolhe modelo de texto/imagem/voz, segundos
   por cena, % de vídeo IA e nº de thumbnails que cabem no `cap_brl` do nível; as etapas leem do plano
-  (`plan_model`, `planned`). Modelos fixados em Configurações nunca são trocados.
+  (`plan_model`, `planned`). Modelos fixados em Configurações nunca são trocados. A divisão em cenas
+  limita o vídeo IA à % do plano (`scenes.cap_video_scenes`); a IA não decide sozinha.
+- **Sincronia:** a duração de cada cena é a do áudio dela; a montagem corta/estica o áudio para essa
+  duração exata e as transições ficam centradas no início da fala (não há atraso acumulado).
 - **Skill do canal:** contexto de toda chamada de IA = canal + Skill atual + aprendizados aceitos
   (`pipeline/context.py`). Ações do usuário viram `FeedbackEvent`; exportar dispara `skill.learn`.
 - **Erros:** `StageError` = erro explicável ao usuário (não repete). `ProviderError(retryable=…)`

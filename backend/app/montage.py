@@ -6,7 +6,9 @@ máquina de escrever + narração + efeitos sonoros sintetizados.
 Como a montagem fica leve (também em ARM): cada cena vira um "corpo" e cada corte vira um pedaço
 de transição; os pedaços são codificados um a um (MP4) e juntados sem recodificar. A linha do
 tempo segue a narração: a cena i ocupa [início_i, início_i + duração do áudio_i]; a transição de
-entrada da cena i acontece no começo dela, misturando o final estendido da cena anterior.
+entrada da cena i fica CENTRADA no corte (metade antes, metade depois do início da fala da cena), para a
+imagem nova chegar junto com a frase e não atrasada. A fonte de vídeo da cena i começa em
+início_i − d_i/2 e vai até início_{i+1} + d_{i+1}/2.
 """
 
 from __future__ import annotations
@@ -339,7 +341,7 @@ def _audio(shots: list[Shot], tl: Timeline, typing: list[tuple[int, float, float
             continue
         clicks = work / f"typing_{k:04d}.wav"
         sfx.render_typing(chars, dt, clicks)
-        start = tl.starts[k] + tl.trans[k][1] + t0
+        start = tl.starts[k] + tl.trans[k][1] / 2 + t0  # o texto começa com o corpo da cena (depois da transição)
         inputs += ["-i", str(clicks)]
         graph.append(f"[{idx}:a]volume={sfx.TYPING_VOLUME},adelay={int(start * 1000)}:all=1[e{idx}]")
         events.append(f"[e{idx}]")
@@ -376,7 +378,7 @@ def build(shots: list[Shot], out: Path, spec: Spec, work: Path, *, progress: Pro
     sources: list[Source] = []
     for i, s in enumerate(shots):
         tick(0.02 + 0.13 * i / n, f"preparando cena {i + 1}/{n}")
-        need = s.duration + (tl.trans[i + 1][1] if i + 1 < n else 0.0)
+        need = tl.trans[i][1] / 2 + s.duration + (tl.trans[i + 1][1] / 2 if i + 1 < n else 0.0)
 
         def report(f: float, what: str, i: int = i) -> None:
             tick(0.02 + 0.13 * (i + f) / n, f"preparando cena {i + 1}/{n}: {what} {f * 100:.0f}%")
@@ -411,19 +413,20 @@ def build(shots: list[Shot], out: Path, spec: Spec, work: Path, *, progress: Pro
         start_frame = _frame(tl.starts[i], fps)
         piece_tick(start_frame, i)
         name, d = tl.trans[i]
+        d_next = tl.trans[i + 1][1] if i + 1 < n else 0.0
         if i > 0 and name:
-            frames = _frame(tl.starts[i] + d, fps) - _frame(tl.starts[i], fps)
+            frames = _frame(tl.starts[i] + d / 2, fps) - _frame(tl.starts[i] - d / 2, fps)
+            # posição na fonte da cena anterior onde a transição começa (a fonte dela começa em início − d/2)
+            prev_at = shots[i - 1].duration + tl.trans[i - 1][1] / 2 - d / 2
             if frames > 0:
                 try:
-                    piece = _transition(i, sources[i - 1], shots[i - 1].duration, sources[i], name, d, frames,
-                                        spec, work)
+                    piece = _transition(i, sources[i - 1], prev_at, sources[i], name, d, frames, spec, work)
                 except MediaError as exc:
                     spec.warnings.append(f"cena {i + 1}: transição trocada por corte ({_short(exc)})")
-                    piece = _transition(i, sources[i - 1], shots[i - 1].duration, sources[i], None, d, frames,
-                                        spec, work)
+                    piece = _transition(i, sources[i - 1], prev_at, sources[i], None, d, frames, spec, work)
                 pieces.append(piece)
-        body_start = tl.starts[i] + (d if name else 0.0)
-        body_end = tl.starts[i] + s.duration
+        body_start = tl.starts[i] + (d / 2 if name else 0.0)
+        body_end = tl.starts[i] + s.duration - d_next / 2
         frames = _frame(body_end, fps) - _frame(body_start, fps)
         if frames > 0:
             args = (i, n, sources[i], s, d if name else 0.0, body_end - body_start, frames, spec, work)

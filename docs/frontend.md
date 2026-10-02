@@ -40,7 +40,9 @@ Abas pela query `?etapa=` (`STAGES`): `roteiro`, `cenas`, `visuais`, `narracao`,
 | Arquivos | `FilesStage.tsx` | uso de disco por parte e exclusão |
 
 O cabeçalho mostra status, nível (trocar nível refaz o plano), tamanho e custo; cada aba tem um
-indicador de estado vindo de `project.stages` (`stageInfo`).
+indicador de estado vindo de `project.stages` (`stageInfo`). Entre o cabeçalho e as abas fica o
+**piloto automático** (`pages/project/Autopilot.tsx`): etapas ✓/▸, ligar/parar/retomar, aviso de pausa.
+A aba Custos tem o quadro **Planejado × real** por etapa (plano do nível atual × custo cobrado).
 
 ## Dados
 

@@ -59,6 +59,8 @@ def test_full_pipeline(auth, fake):
     assert d["stages"]["script"]["analysis_fresh"] is True
 
     # 2. cenas: cobrem todas as frases, em ordem
+    # o roteiro de teste é curto: com 3% de vídeo IA nenhuma cena teria vídeo; o teste precisa de algumas
+    auth.put("/api/settings/tiers", json={"tiers": {"BALANCED": {"video_share": 0.3}}})
     assert auth.post(f"/api/projects/{pid}/scenes/plan", json={}).status_code == 200
     run_until_idle()
     d = auth.get(f"/api/projects/{pid}").json()

@@ -57,6 +57,8 @@ STAGES: dict[str, str] = {
 FREE_KINDS = {"visual.motion", "narration.merge", "export.zip", "render.final"}
 # chamados quando um lote termina com sucesso (ex.: montar o vídeo final depois da narração)
 GROUP_HOOKS: list[Callable[[Session, Job], None]] = []
+# chamados quando uma tarefa de nível superior (sem pai: job avulso ou grupo) termina, com qualquer status
+DONE_HOOKS: list[Callable[[Session, Job], None]] = []
 log = logging.getLogger(__name__)
 ACTIVE = (JobStatus.QUEUED.value, JobStatus.RUNNING.value)
 TERMINAL = (JobStatus.SUCCEEDED.value, JobStatus.FAILED.value, JobStatus.CANCELED.value)
@@ -172,6 +174,18 @@ def finish(db: Session, job: Job, status: str, *, result: dict[str, Any] | None 
     if job.parent_id:
         db.flush()
         update_group(db, job.parent_id)
+    elif job.status in TERMINAL:
+        _run_done_hooks(db, job)
+
+
+def _run_done_hooks(db: Session, job: Job) -> None:
+    db.flush()
+    for hook in DONE_HOOKS:
+        try:
+            with db.begin_nested():
+                hook(db, job)
+        except Exception:  # noqa: BLE001 - a tarefa terminou; o gatilho não pode derrubar o worker
+            log.exception("gatilho de fim de tarefa falhou (%s #%s)", job.kind, job.id)
 
 
 def update_group(db: Session, group_id: int) -> None:
@@ -223,6 +237,8 @@ def update_group(db: Session, group_id: int) -> None:
                         hook(db, group)
                 except Exception:  # noqa: BLE001 - o lote terminou; o gatilho não pode derrubar o worker
                     log.exception("gatilho pós-lote falhou (%s #%s)", group.kind, group.id)
+        if before not in TERMINAL and group.parent_id is None:
+            _run_done_hooks(db, group)
 
 
 def heartbeat(job_id: int, progress: float | None = None, message: str | None = None) -> bool:
@@ -248,11 +264,14 @@ def cancel(db: Session, job: Job) -> None:
         if job.status in ACTIVE:
             job.status = JobStatus.CANCELED.value
             job.finished_at = utcnow()
+            _run_done_hooks(db, job)
     else:
         _cancel_one(job)
         if job.parent_id:
             db.flush()
             update_group(db, job.parent_id)
+        elif job.status in TERMINAL:
+            _run_done_hooks(db, job)
 
 
 def _cancel_one(job: Job) -> None:

@@ -9,6 +9,7 @@ import { Badge, ErrorBox, Loading, Modal, Btn, Panel, useToast } from "../compon
 import { api, errorMessage } from "../lib/api";
 import { PROJECT_STATUS, QUALITY_LABEL, brl, bytes, timecode, usd } from "../lib/format";
 import type { ProjectDetail, Quality } from "../lib/types";
+import { AutopilotPanel } from "./project/Autopilot";
 import { CostsStage } from "./project/CostsStage";
 import { ExportStage } from "./project/ExportStage";
 import { FilesStage } from "./project/FilesStage";
@@ -76,7 +77,7 @@ export function Project() {
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", id],
     queryFn: () => api.get<ProjectDetail>(`/projects/${id}`),
-    refetchInterval: (q) => ((q.state.data?.active_jobs.length ?? 0) > 0 ? 2000 : false),
+    refetchInterval: (q) => ((q.state.data?.active_jobs.length ?? 0) > 0 || q.state.data?.autopilot?.active ? 2000 : false),
   });
   const estimate = useEstimate(id, !!project);
   const setQuality = useMutation({
@@ -170,6 +171,8 @@ export function Project() {
           </div>
         </div>
       </header>
+
+      <AutopilotPanel project={project} estimate={estimate.data} />
 
       <nav className="mb-6 flex overflow-x-auto border border-line bg-panel" role="tablist">
         {STAGES.map((s) => {

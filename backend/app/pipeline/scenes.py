@@ -73,6 +73,22 @@ def limit_scene_count(items: list[dict], max_scenes: int, segs: dict[int, text.S
     return out
 
 
+def cap_video_scenes(items: list[dict], share: float) -> int:
+    """A IA não decide sozinha quanto vídeo IA entra: no máximo a % do plano (o vídeo é o item mais caro).
+
+    Mantém as primeiras cenas de vídeo escolhidas e transforma as demais em imagem com movimento.
+    """
+    limit = round(len(items) * max(0.0, share))
+    videos = [it for it in items if it["asset_type"] == "VIDEO"]
+    for it in videos[limit:]:
+        it["asset_type"] = "IMAGE_MOTION"
+        if it.get("motion") in (None, "", "static"):
+            it["motion"] = "zoom_in"
+        it["asset_type_reason"] = (f"A IA sugeriu vídeo IA, mas o plano do nível permite vídeo em até {share:.0%} das "
+                                   f"cenas ({limit}). Troque para VIDEO e trave a cena se quiser mesmo assim.")
+    return max(0, len(videos) - limit)
+
+
 @handler("scenes.plan")
 def plan_scenes(ctx: JobContext) -> dict:
     with session_scope() as db:
@@ -114,6 +130,7 @@ def plan_scenes(ctx: JobContext) -> dict:
         planned.extend(part)
         if part:
             previous = part[-1]["visual_description"]
+    capped = cap_video_scenes(planned, float(budget.get("video_share") or 0))
     with session_scope() as db:
         project = load_project(db, ctx.project_id)
         old = list(project.scenes)
@@ -140,7 +157,21 @@ def plan_scenes(ctx: JobContext) -> dict:
         if project.status in ("draft", "script"):
             project.status = "scenes"
     videos = sum(1 for p in planned if p["asset_type"] == "VIDEO")
-    return {"message": f"{len(planned)} cenas criadas ({videos} com vídeo IA)", "scenes": len(planned)}
+    extra = f"; {capped} viraram imagem com movimento (limite de vídeo IA do plano)" if capped else ""
+    return {"message": f"{len(planned)} cenas criadas ({videos} com vídeo IA{extra})", "scenes": len(planned)}
+
+
+def _video_percent(db, project, params: dict) -> int:
+    """% de vídeo IA que o plano do projeto (dentro do teto) permite; sem plano, o padrão do nível."""
+    plan = production_plan(db, project)
+    if plan.get("video_keep") is not None:
+        scenes = max(1, len(project.scenes))
+        share = int(plan["video_keep"]) / scenes
+    elif plan.get("video_share") is not None:
+        share = float(plan["video_share"])
+    else:
+        share = float(params.get("video_share") or 0)
+    return int(round(share * 100))
 
 
 @handler("scene.rewrite")
@@ -161,7 +192,7 @@ def rewrite_scene(ctx: JobContext) -> dict:
                   "asset_type": scene.asset_type, "narration": scene.narration}
         system, user = prompts.scene_rewrite(
             full_context(db, project), before, prev_desc, next_desc, instruction,
-            int(round(float(params.get("video_share") or 0) * 100)), channel.visual_style,
+            _video_percent(db, project, params), channel.visual_style,
         )
     ctx.progress(0.2, "reescrevendo cena", force=True)
     result, _ = call_json(ctx, model=model, system=system, user=user, schema=SceneRewrite,

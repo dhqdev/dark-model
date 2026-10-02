@@ -12,7 +12,7 @@ from ..models import Asset, AssetKind, Channel, FeedbackEvent, Job, Project, Qua
 from ..pipeline import text
 from ..pipeline.common import StageError, scene_timeline, tts_settings
 from ..pipeline.estimate import estimate_project, planned
-from ..pipeline import files
+from ..pipeline import autopilot, files
 from ..pipeline.render import enqueue_render, render_hash, render_state
 from ..pipeline.narration import enqueue_project_narration
 from ..pipeline.visuals import enqueue_project_visuals
@@ -63,6 +63,11 @@ class ExportIn(BaseModel):
 
 class MergeIn(BaseModel):
     gap: float = Field(0.0, ge=0, le=3)
+
+
+class AutopilotIn(BaseModel):
+    action: str = Field("start", pattern="^(start|stop)$")
+    ignore_risk: bool = False
 
 
 def _project(db: Session, project_id: int) -> Project:
@@ -158,6 +163,7 @@ def get_project(project_id: int, db: Session = Depends(get_db)) -> dict:
     return {
         **serialize.project_summary(p, cost["cost"], len(scenes), sum(a.size_bytes or 0 for a in assets.values())),
         "script": p.script, "notes": p.notes, "target_minutes": p.target_minutes, "analysis": p.analysis, "plan": p.plan,
+        "autopilot": p.autopilot,
         "analysis_at": serialize.iso(p.analysis_at), "metadata_suggestions": p.metadata_suggestions,
         "description": p.description, "tags": p.tags or [],
         "channel": serialize.channel(channel),
@@ -322,6 +328,21 @@ def render(project_id: int, db: Session = Depends(get_db)) -> dict:
     job = enqueue_render(db, p)
     db.commit()
     return _job_out(job, "")
+
+
+@router.post("/{project_id}/autopilot")
+def set_autopilot(project_id: int, body: AutopilotIn, db: Session = Depends(get_db)) -> dict:
+    """Liga (ou retoma) e desliga o piloto automático: roteiro → cenas → narração → visuais → vídeo → ZIP."""
+    p = _project(db, project_id)
+    if body.action == "stop":
+        autopilot.stop(p)
+    else:
+        try:
+            autopilot.start(db, p, ignore_risk=body.ignore_risk)
+        except StageError as exc:
+            raise HTTPException(400, str(exc)) from exc
+    db.commit()
+    return get_project(project_id, db)
 
 
 @router.get("/{project_id}/storage")

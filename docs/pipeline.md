@@ -27,7 +27,9 @@ O modelo de texto vem do plano do projeto (`plan_model(db, project, "text")`).
 - Roteiros longos vão em blocos de até 650 palavras (`chunk_segments`), passando a última descrição
   visual como continuidade.
 - Duração alvo por cena e % de vídeo IA vêm do plano de custo (`production_plan(..., ignore_scenes=True)`).
-  `limit_scene_count` junta cenas se a IA criar mais que 1,2× o esperado.
+  `limit_scene_count` junta cenas se a IA criar mais que 1,2× o esperado. `cap_video_scenes` mantém no
+  máximo `round(cenas × video_share do plano)` cenas VIDEO (as primeiras); as demais viram IMAGE_MOTION
+  com motivo explicado (antes a IA podia pôr 20% de vídeo num nível de 3%, e o vídeo é o item mais caro).
 - Por cena a IA define: `visual_description` (pt-BR), `prompt` (inglês, fiel à narração; fotorrealista
   salvo se o estilo pedir ilustração — `prompts.wants_realism`), `asset_type` + motivo, `motion`,
   `transition` (1ª cena sempre dissolve), `sfx`, `overlay_text`. Valores normalizados por
@@ -73,7 +75,10 @@ O modelo de texto vem do plano do projeto (`plan_model(db, project, "text")`).
 - Cada cena vira um `montage.Shot`: `video` (vídeo IA), `motion` (clipe ou gerado na hora), `still`.
   Sem vídeo IA pronto → usa imagem com movimento (aviso).
 - `montage.build`: corpo de cada cena + pedaços de transição (`xfade`, tabela `TRANSITIONS`) codificados
-  um a um em MP4 e juntados sem recodificar; texto com efeito máquina de escrever (`drawtext`, 17
+  um a um em MP4 e juntados sem recodificar. Cada transição fica **centrada no início da fala** da cena
+  (metade antes, metade depois; desde `RENDER_VERSION = 2`), então a imagem nova chega junto com a frase.
+  O áudio de cada cena é cortado/completado para a duração exata dela (`apad,atrim`), então imagem e
+  fala não se desencontram ao longo do vídeo; texto com efeito máquina de escrever (`drawtext`, 17
   caracteres/s, som de teclas `sfx.render_typing`); efeitos sintetizados (`sfx.py`); narração na
   linha do tempo; fade de abertura/encerramento. Cenas > 12 s ganham um segundo enquadramento
   (punch-in 1,22×). Vídeo IA mais curto que o áudio continua com movimento do último quadro.
@@ -105,6 +110,24 @@ O modelo de texto vem do plano do projeto (`plan_model(db, project, "text")`).
 - Rota: `POST /projects/{id}/export`. ZIP com a estrutura do README (roteiro, cenas CSV/JSON, visuais
   na ordem, narração, SRT, thumbnails, metadados, `timeline.json`, `LEIA-ME.txt` para CapCut).
 - Se o canal tem `auto_learn`, enfileira `skill.learn` no fim.
+
+## Piloto automático (`autopilot.py`)
+
+- Rota: `POST /projects/{id}/autopilot` com `{"action": "start" | "stop", "ignore_risk": bool}`.
+  "start" também serve para retomar depois de uma pausa.
+- Estado em `Project.autopilot` (JSON): `active`, `status` running/paused/done/stopped, `step`,
+  `message`, `error`, `reason` (error/risk), `tries`, datas.
+- Ordem: análise → cenas → **narração → visuais** (com a duração real do áudio o movimento e o vídeo IA
+  já saem no tempo certo) → vídeo final → título/descrição → thumbnail → ZIP.
+- `advance` roda a cada tarefa de nível superior do projeto que termina (`queue.DONE_HOOKS`) e só age se
+  nada do projeto estiver rodando; enfileira **só o que falta** da primeira etapa incompleta (usa os
+  mesmos `enqueue_project_*` das telas). Trava a linha do projeto no Postgres para dois gatilhos
+  simultâneos não enfileirarem em dobro.
+- Pausa: tarefa com falha/cancelada (exceto `skill.*`), análise `high_risk` (até o usuário confirmar
+  "continuar mesmo assim"), ou etapa que rodou `MAX_TRIES` vezes e continua incompleta (anti-loop de gasto).
+- Cenas já existentes nunca são refeitas se já têm imagem ou áudio.
+- Rede de segurança: a manutenção do worker chama `autopilot.heal` (piloto ligado, nada rodando há 60 s).
+- Tela: `frontend/src/pages/project/Autopilot.tsx` (faixa acima das abas, confirmação com a estimativa).
 
 ## Skill e aprendizados (`learning.py`)
 

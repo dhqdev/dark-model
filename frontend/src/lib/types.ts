@@ -260,12 +260,28 @@ export interface Stages {
   };
 }
 
+export type AutopilotStep = "analysis" | "scenes" | "narration" | "visuals" | "render" | "metadata" | "thumbnail" | "export";
+
+export interface Autopilot {
+  active: boolean;
+  status: "running" | "paused" | "done" | "stopped";
+  step: AutopilotStep | null;
+  message: string;
+  error: string;
+  reason?: "error" | "risk";
+  ignore_risk: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string | null;
+}
+
 export interface ProjectDetail extends ProjectSummary {
   script: string;
   notes: string;
   target_minutes: number | null;
   analysis: Analysis | null;
   plan: ProductionPlan | null;
+  autopilot: Autopilot | null;
   analysis_at: string | null;
   metadata_suggestions: MetadataSuggestions | null;
   description: string;

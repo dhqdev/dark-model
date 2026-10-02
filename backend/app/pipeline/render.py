@@ -29,7 +29,7 @@ from .visuals import scene_visual_state
 
 log = logging.getLogger(__name__)
 
-RENDER_VERSION = 1
+RENDER_VERSION = 2  # 2: transições centradas no corte da fala
 
 
 def _tts(db: Session, project: Project) -> dict:

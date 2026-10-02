@@ -14,6 +14,7 @@ def _part(report: dict, key: str) -> dict:
 
 def test_sizes_and_delete_each_part(auth, fake):
     ch = make_channel(auth)
+    auth.put("/api/settings/tiers", json={"tiers": {"BALANCED": {"video_share": 0.3}}})  # garante cenas com vídeo IA
     pid = auth.post("/api/projects", json={"channel_id": ch["id"], "title": "Arquivos", "script": SCRIPT}).json()["id"]
     for path, body in (("analyze", None), ("scenes/plan", {}), ("visuals", {"scope": "missing"}),
                        ("narration", {}), ("thumbnails", {}), ("metadata", None), ("export", {})):

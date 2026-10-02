@@ -138,6 +138,10 @@ class Worker:
                 recovered = queue.recover_stale(db, self.stale_seconds)
                 if recovered:
                     log.warning("%s jobs travados foram recuperados", recovered)
+            with session_scope() as db:
+                from ..pipeline import autopilot
+
+                autopilot.heal(db)
             if now - self._last_reconcile > 60 and get_settings().openrouter_configured:
                 self._last_reconcile = now
                 from ..providers.registry import openrouter_client

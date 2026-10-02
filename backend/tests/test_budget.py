@@ -146,7 +146,7 @@ def test_premium_fits_even_with_expensive_voice_and_text(auth, fake, monkeypatch
 
 
 def test_planned_video_scenes_are_trimmed_to_fit(auth, fake):
-    auth.put("/api/settings/tiers", json={"tiers": {"PREMIUM": {"cap_brl": 0}}})
+    auth.put("/api/settings/tiers", json={"tiers": {"PREMIUM": {"cap_brl": 0, "video_share": 0.5}}})
     pid = _project(auth, script=SCRIPT, quality="PREMIUM")
     assert auth.post(f"/api/projects/{pid}/scenes/plan", json={}).status_code == 200
     run_until_idle()
@@ -157,7 +157,8 @@ def test_planned_video_scenes_are_trimmed_to_fit(auth, fake):
     assert auth.patch(f"/api/scenes/{videos[0]['id']}", json={"locked": True}).status_code == 200
     # teto que só cabe com menos vídeo IA
     est = auth.get(f"/api/projects/{pid}/estimate").json()["tiers"]["PREMIUM"]
-    auth.put("/api/settings/tiers", json={"tiers": {"PREMIUM": {"cap_brl": round(est['total_brl'] * 0.7, 2)}}})
+    auth.put("/api/settings/tiers", json={"tiers": {"PREMIUM": {"cap_brl": round(est['total_brl'] * 0.7, 2),
+                                                                  "video_share": 0.5}}})
     prem = auth.get(f"/api/projects/{pid}/estimate").json()["tiers"]["PREMIUM"]
     keep = prem["plan"]["video_keep"]
     assert prem["fits"] is True and 1 <= keep < len(videos)
@@ -169,3 +170,13 @@ def test_planned_video_scenes_are_trimmed_to_fit(auth, fake):
     assert len(left) == keep and videos[0]["id"] in {s["id"] for s in left}
     converted = [s for s in after if s["id"] in {v["id"] for v in videos} and s["asset_type"] == "IMAGE_MOTION"]
     assert converted and "teto" in converted[0]["asset_type_reason"]
+
+
+def test_scene_plan_respects_the_tiers_video_share(auth, fake):
+    """A IA sugere vídeo IA em várias cenas; fica só a % do plano (o resto vira imagem com movimento)."""
+    pid = _project(auth, script=SCRIPT, quality="BALANCED")  # Balanced: até 3% → roteiro curto = 0 vídeos
+    auth.post(f"/api/projects/{pid}/scenes/plan", json={})
+    run_until_idle()
+    scenes = auth.get(f"/api/projects/{pid}").json()["scenes_list"]
+    assert scenes and not [s for s in scenes if s["asset_type"] == "VIDEO"]
+    assert any("plano do nível" in s["asset_type_reason"] for s in scenes)

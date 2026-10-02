@@ -22,6 +22,19 @@ Registro curto do que já foi feito e por quê. Acrescente uma linha a cada muda
 - **Título/descrição:** aceitar campos com outros nomes (`ALIASES`) e não remover o campo `title` do
   JSON Schema enviado à IA (`llm.strict_schema`).
 
+## 2026-10-02
+
+- **Documentação para o Claude:** `CLAUDE.md` + `docs/`.
+- **Piloto automático** por projeto (migração 0004): passa sozinho por todas as etapas, só gera o que
+  falta, pausa em falha/alto risco, anti-loop de gasto.
+- **Auditoria de sincronia:** sem atraso acumulado (testado com áudios de durações quebradas: vídeo e
+  áudio terminam juntos e cada troca de imagem acontece no início da fala). Ajuste: transições centradas
+  no corte da fala (antes a imagem nova só aparecia inteira 0,4–0,9 s depois da frase começar).
+- **Auditoria dos planos:** todas as etapas usam o modelo do plano, mas a divisão em cenas aceitava
+  qualquer quantidade de vídeo IA que coubesse no teto (ex.: 20% num nível de 3%). Agora fica no máximo
+  a % do plano. Reescrever cena passou a usar a % do plano, não a padrão do nível.
+- **Planejado × real** na aba Custos.
+
 ## Ideias já previstas (não feitas)
 
 Legendas queimadas, música de fundo com ducking, publicação no YouTube (OAuth), métricas do YouTube
